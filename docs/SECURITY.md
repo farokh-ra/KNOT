@@ -7,7 +7,8 @@ or storing the conversation. The app assumes:
 
 - the invitation code is exchanged out of band and only with the intended person;
 - the network is hostile (packets can be observed, injected, replayed, dropped);
-- public DHT nodes are untrusted infrastructure, useful only for rendezvous;
+- public DHT nodes, UDP trackers and STUN servers are untrusted infrastructure, useful only
+  for rendezvous;
 - neither phone's operating system is compromised, and the app sandbox holds.
 
 ## What the design provides
@@ -20,7 +21,9 @@ or storing the conversation. The app assumes:
   an unrelated device that guesses the topic cannot complete a handshake.
 - **No relay**: there is no code path that forwards chat through a third party. When a direct
   path fails, the UI says so.
-- **Minimal disclosure to the DHT**: only a derived 20-byte topic plus the observed IP/port.
+- **Minimal disclosure to rendezvous services**: DHT nodes and UDP trackers learn only a
+  derived 20-byte topic plus the observed IP/port; STUN servers only reflect the socket's
+  public endpoint. The invitation secret is never sent to any of them.
 
 ## Honest gaps
 
@@ -34,20 +37,21 @@ or storing the conversation. The app assumes:
 - Message history is **not** encrypted at rest. It is plain SQLite inside the app sandbox; the
   identity key and invitation secret are wrapped, but message text is not.
 - No protection against a compromised device, screenshot malware, or a rooted phone.
-- Metadata: while the app is open, DHT nodes and the other device learn your public IP and
-  UDP port. That is inherent to serverless rendezvous.
+- Metadata: while the app is open, DHT nodes, UDP trackers, STUN servers and the other device
+  learn your public IP and UDP port. That is inherent to serverless rendezvous.
 
 ## Checklist
 
 | Item | Status |
 |---|---|
 | Invitation secret from a cryptographically secure RNG | Done — `SecureRandom`, 32 bytes |
-| Raw invitation secret never published to the DHT | Done — only the HMAC-derived 20-byte topic |
-| Peer proves possession of the invitation secret | Done — initiation MAC, verified in `HandshakeTest` |
+| Raw invitation secret never published to rendezvous services | Done — only the HMAC-derived 20-byte topic reaches DHT nodes and trackers; STUN sees only the endpoint |
+| Peer proves possession of the invitation secret | Done — initiation MAC, verified in `HandshakeTest`; incoming initiations are MAC-checked before any state is created |
+| Tracker/STUN replies cannot spoof another endpoint | Done — transaction id and source address must match; STUN replies also require the full 12-byte transaction |
 | Remote peer identity authenticated | Done — identity key inside the MAC'd transcript; pinned after pairing |
 | Encrypted channel retained and verified | Done — AES-256-GCM, replay window, tamper tests |
 | No relay / TURN / message-forwarding fallback | Done — none exists in the code base |
-| DHT receives no message text | Done — DHT carries KRPC only |
+| Rendezvous services receive no message text | Done — DHT carries KRPC only; trackers see the topic hash and endpoint; STUN sees a binding request |
 | Message parser validates type, length, encoding | Done — `AppCodecTest` |
 | Duplicate messages ignored | Done — chunk reassembly plus `messages.id` primary key |
 | ACK sent only after local persistence | Done — repository insert precedes the ACK send |

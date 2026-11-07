@@ -17,16 +17,17 @@ import dev.twoperson.messenger.net.PeerLink
 import dev.twoperson.messenger.net.UdpTransport
 import dev.twoperson.messenger.net.Wire
 import dev.twoperson.messenger.net.dht.DhtClient
+import dev.twoperson.messenger.net.rendezvous.PublicRendezvous
 import dev.twoperson.messenger.protocol.AppMessage
 import dev.twoperson.messenger.protocol.Protocol
 import dev.twoperson.messenger.util.Hex
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -44,6 +45,7 @@ import java.net.DatagramSocket
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.util.Random
+import kotlin.coroutines.cancellation.CancellationException
 
 enum class ConnectionState { NOT_PAIRED, IDLE, DISCOVERING, CONNECTING, CONNECTED, DISCONNECTED, UNABLE_TO_CONNECT }
 
@@ -106,6 +108,41 @@ class ConnectionEngine(
     private var dhtSocket: DatagramSocket? = null
 
     @Volatile
+    private var rendezvous: PublicRendezvous? = null
+
+    /** Same socket rule as [dhtSocket]. */
+    private var rendezvousSocket: DatagramSocket? = null
+
+    /** Needed on the UDP reader thread to validate an incoming initiation without I/O. */
+    @Volatile
+    private var routingAuthKey: ByteArray? = null
+
+    @Volatile
+    private var routingSocket: DatagramSocket? = null
+
+    /**
+     * Cached local identity and pinned peer key. The UDP reader thread uses these to reject
+     * self-reflections and wrong identities without touching the Keystore or SQLite.
+     */
+    @Volatile
+    private var ownIdentity: ByteArray? = null
+
+    @Volatile
+    private var localIdentityPrivateKey: ByteArray? = null
+
+    @Volatile
+    private var pinnedPeerHex: String? = null
+
+    private val incomingLock = Any()
+
+    /** A responder link built from a peer initiation, promoted to [activeLink] once ready. */
+    @Volatile
+    private var incomingLink: PeerLink? = null
+
+    @Volatile
+    private var incomingFrom: InetSocketAddress? = null
+
+    @Volatile
     private var lanBeacon: LanBeacon? = null
 
     private var multicastLock: WifiManager.MulticastLock? = null
@@ -162,6 +199,7 @@ class ConnectionEngine(
         secureStore.saveInviteSecret(secret)
         scope.launch {
             repository.clearPeer()
+            pinnedPeerHex = null
             repository.resetFailedToPending()
             lastPeerEndpoint = null
             restartRuntime()
@@ -175,6 +213,7 @@ class ConnectionEngine(
         secureStore.saveInviteSecret(secret)
         scope.launch {
             repository.clearPeer()
+            pinnedPeerHex = null
             repository.resetFailedToPending()
             lastPeerEndpoint = null
             restartRuntime()
@@ -186,6 +225,7 @@ class ConnectionEngine(
         secureStore.saveInviteSecret(null)
         scope.launch {
             repository.clearPeer()
+            pinnedPeerHex = null
             lastPeerEndpoint = null
             stopResources()
             _status.value = ConnectionStatus(ConnectionState.NOT_PAIRED)
@@ -224,116 +264,169 @@ class ConnectionEngine(
     private suspend fun runLoop() {
         var backoff = INITIAL_BACKOFF_MS
         while (isCoroutineActive()) {
-            val secret = secureStore.inviteSecret()
-            if (secret == null) {
-                _status.value = ConnectionStatus(ConnectionState.NOT_PAIRED)
-                return
-            }
-            val authKey = Invite.authKey(secret)
-            val topic = Invite.topic(secret)
+            try {
+                val secret = secureStore.inviteSecret()
+                if (secret == null) {
+                    routingAuthKey = null
+                    routingSocket = null
+                    _status.value = ConnectionStatus(ConnectionState.NOT_PAIRED)
+                    return
+                }
+                val authKey = Invite.authKey(secret)
+                val topic = Invite.topic(secret)
 
-            ensureTransport()
-            val currentTransport = transport
-            val socket = currentTransport?.socketOrNull()
-            if (currentTransport == null || socket == null) {
-                _status.value = ConnectionStatus(ConnectionState.UNABLE_TO_CONNECT)
-                delay(backoff)
-                backoff = nextBackoff(backoff)
-                continue
-            }
-
-            startLanBeacon(topic)
-            val client = dhtClientFor(socket)
-            _status.value = ConnectionStatus(ConnectionState.DISCOVERING)
-
-            val candidates = Channel<InetSocketAddress>(Channel.UNLIMITED)
-            candidateSink = { address -> candidates.trySend(address) }
-            val discoveryJob = scope.launch { discoveryLoop(topic, currentTransport, client, candidates) }
-
-            var connectedLink: PeerLink? = null
-
-            // Reconnect fast path: the endpoint that last carried authenticated traffic is
-            // almost always still correct, and after a peer restart its initiation already
-            // told us the new address. Waiting for a DHT round trip instead costs seconds.
-            lastPeerEndpoint?.let { hint ->
-                _status.value = ConnectionStatus(ConnectionState.CONNECTING)
-                connectedLink = attemptConnection(hint, authKey, socket, QUICK_HANDSHAKE_MS)
-            }
-
-            var phaseStart = System.currentTimeMillis()
-            while (isCoroutineActive() && connectedLink == null) {
-                val candidate = withTimeoutOrNull(CANDIDATE_POLL_MS) { candidates.receive() }
-                if (candidate == null) {
-                    if (System.currentTimeMillis() - phaseStart > UNABLE_AFTER_MS &&
-                        _status.value.state != ConnectionState.UNABLE_TO_CONNECT
-                    ) {
-                        _status.value = ConnectionStatus(ConnectionState.UNABLE_TO_CONNECT)
-                    }
+                ensureTransport()
+                val currentTransport = transport
+                val socket = currentTransport?.socketOrNull()
+                if (currentTransport == null || socket == null) {
+                    _status.value = ConnectionStatus(ConnectionState.UNABLE_TO_CONNECT)
+                    delay(backoff)
+                    backoff = nextBackoff(backoff)
                     continue
                 }
-                if (!isConfigured()) break
-                _status.value = ConnectionStatus(ConnectionState.CONNECTING)
-                connectedLink = attemptConnection(candidate, authKey, socket, HANDSHAKE_BUDGET_MS)
-                phaseStart = System.currentTimeMillis()
-            }
 
-            discoveryJob.cancel()
-            candidateSink = null
-            candidates.close()
+                // Populate the reader-thread caches before routing is enabled.
+                localIdentityPrivateKey = secureStore.identityPrivateKey()
+                ownIdentity = secureStore.identityPublicKey()
+                pinnedPeerHex = repository.peer()?.publicKeyHex
+                routingAuthKey = authKey
+                routingSocket = socket
+                startLanBeacon(topic)
+                val dhtClient = dhtClientFor(socket)
+                val rendezvousClient = rendezvousFor(socket)
+                _status.value = ConnectionStatus(ConnectionState.DISCOVERING)
 
-            val connected = connectedLink
-            if (connected == null) {
+                val candidates = Channel<InetSocketAddress>(Channel.UNLIMITED)
+                candidateSink = { address -> candidates.trySend(address) }
+                val discoveryJob = scope.launch {
+                    coroutineScope {
+                        launch { dhtDiscoveryLoop(topic, currentTransport, dhtClient, candidates) }
+                        launch {
+                            rendezvousDiscoveryLoop(topic, currentTransport, rendezvousClient, candidates)
+                        }
+                    }
+                }
+
+                var connectedLink: PeerLink? = null
+                val tried = HashMap<InetSocketAddress, Long>()
+
+                // Reconnect fast path: the endpoint that last carried authenticated traffic is
+                // almost always still correct, and after a peer restart its initiation already
+                // told us the new address. Waiting for a fresh lookup instead costs seconds.
+                lastPeerEndpoint?.let { hint ->
+                    _status.value = ConnectionStatus(ConnectionState.CONNECTING)
+                    tried[hint] = System.currentTimeMillis()
+                    connectedLink = attemptConnection(hint, authKey, socket, QUICK_HANDSHAKE_MS)
+                }
+
+                var phaseStart = System.currentTimeMillis()
+                while (isCoroutineActive() && connectedLink == null) {
+                    val adopted = activeLink
+                    if (adopted != null && adopted.isReady) {
+                        connectedLink = adopted
+                        break
+                    }
+                    val candidate = withTimeoutOrNull(CANDIDATE_POLL_MS) { candidates.receive() }
+                    if (candidate == null) {
+                        if (System.currentTimeMillis() - phaseStart > UNABLE_AFTER_MS &&
+                            _status.value.state != ConnectionState.UNABLE_TO_CONNECT
+                        ) {
+                            _status.value = ConnectionStatus(ConnectionState.UNABLE_TO_CONNECT)
+                        }
+                        continue
+                    }
+                    if (!isConfigured()) break
+                    if (!isDialable(candidate, socket, rendezvousClient, tried)) continue
+                    tried[candidate] = System.currentTimeMillis()
+                    _status.value = ConnectionStatus(ConnectionState.CONNECTING)
+                    connectedLink = attemptConnection(candidate, authKey, socket, HANDSHAKE_BUDGET_MS)
+                    phaseStart = System.currentTimeMillis()
+                }
+
+                discoveryJob.cancel()
+                candidateSink = null
+                candidates.close()
+
+                val connected = connectedLink
+                if (connected == null) {
+                    _status.value = ConnectionStatus(ConnectionState.UNABLE_TO_CONNECT)
+                    delay(backoff)
+                    backoff = nextBackoff(backoff)
+                    continue
+                }
+
+                backoff = INITIAL_BACKOFF_MS
+                val endpoint = connected.remoteAddress
+                _status.value = ConnectionStatus(
+                    ConnectionState.CONNECTED,
+                    direct = if (isLocalAddress(endpoint.address)) DirectKind.LOCAL_NETWORK else DirectKind.INTERNET
+                )
+                repository.resetFailedToPending()
+                flushOutbox(connected)
+                val reason = connected.awaitClosed()
+                if (activeLink === connected) activeLink = null
+                // Keep the peer endpoint the link last used: after a NAT rebind or a peer
+                // restart this is the address that actually works.
+                lastPeerEndpoint = connected.remoteAddress
+                // The peer acknowledged the handshake but then stopped acknowledging data for
+                // ~45s: report the honest failed state instead of pretending it is in transit.
+                // Nothing is deleted, and the next direct connection retries the same IDs.
+                if (reason == "delivery_failed") {
+                    repository.markUndeliveredAsFailed()
+                }
+                _status.value = ConnectionStatus(ConnectionState.DISCONNECTED, detail = reason)
+                _events.tryEmit(EngineEvent.PeerOffline)
+                delay(RECONNECT_PAUSE_MS)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // An unexpected failure must not kill the engine for the process lifetime.
                 _status.value = ConnectionStatus(ConnectionState.UNABLE_TO_CONNECT)
                 delay(backoff)
                 backoff = nextBackoff(backoff)
-                continue
             }
-
-            backoff = INITIAL_BACKOFF_MS
-            val endpoint = connected.remoteAddress
-            _status.value = ConnectionStatus(
-                ConnectionState.CONNECTED,
-                direct = if (isLocalAddress(endpoint.address)) DirectKind.LOCAL_NETWORK else DirectKind.INTERNET
-            )
-            repository.resetFailedToPending()
-            flushOutbox(connected)
-            val reason = connected.awaitClosed()
-            if (activeLink === connected) activeLink = null
-            // Keep the peer endpoint the link last used: after a NAT rebind or a peer
-            // restart this is the address that actually works.
-            lastPeerEndpoint = connected.remoteAddress
-            // The peer acknowledged the handshake but then stopped acknowledging data for
-            // ~45s: report the honest failed state instead of pretending it is in transit.
-            // Nothing is deleted, and the next direct connection retries the same IDs.
-            if (reason == "delivery_failed") {
-                repository.markUndeliveredAsFailed()
-            }
-            _status.value = ConnectionStatus(ConnectionState.DISCONNECTED, detail = reason)
-            _events.tryEmit(EngineEvent.PeerOffline)
-            delay(RECONNECT_PAUSE_MS)
         }
     }
 
-    private suspend fun discoveryLoop(
+    private suspend fun dhtDiscoveryLoop(
         topic: ByteArray,
         currentTransport: UdpTransport,
         client: DhtClient,
         candidates: Channel<InetSocketAddress>
     ) {
-        var bootstrapped = false
         while (isCoroutineActive()) {
-            val socket = currentTransport.socketOrNull()
-            if (socket == null) return
-            if (!bootstrapped) {
-                bootstrapped = client.bootstrap()
-            }
+            val socket = currentTransport.socketOrNull() ?: return
             try {
-                client.discover(topic, currentTransport.localPort, DISCOVERY_BUDGET_MS)
-                    .forEach { candidates.trySend(it) }
+                if (client.bootstrap()) {
+                    client.discover(topic, socket.localPort, DISCOVERY_BUDGET_MS)
+                        .forEach { candidates.trySend(it) }
+                }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 // Discovery errors are transient; keep trying with the next cycle.
             }
             delay(DISCOVERY_INTERVAL_MS)
+        }
+    }
+
+    private suspend fun rendezvousDiscoveryLoop(
+        topic: ByteArray,
+        currentTransport: UdpTransport,
+        client: PublicRendezvous,
+        candidates: Channel<InetSocketAddress>
+    ) {
+        while (isCoroutineActive()) {
+            val socket = currentTransport.socketOrNull() ?: return
+            try {
+                client.discover(topic, socket.localPort, RENDEZVOUS_BUDGET_MS)
+                    .forEach { candidates.trySend(it) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // STUN and trackers are best-effort; the LAN beacon and DHT keep working.
+            }
+            delay(RENDEZVOUS_INTERVAL_MS)
         }
     }
 
@@ -344,47 +437,73 @@ class ConnectionEngine(
         budgetMs: Long
     ): PeerLink? {
         if (!candidate.address.isReachableAddress() || candidate.port <= 0) return null
-        val handshake = Handshake(authKey, secureStore.identityPrivateKey(), secureStore.identityPublicKey())
+        activeLink?.let { existing ->
+            if (existing.isReady) return existing
+            existing.close("superseded")
+        }
         var linkRef: PeerLink? = null
-        val ready = CompletableDeferred<ByteArray>()
 
         val listener = object : PeerLink.Listener {
-            override fun onHandshakeComplete(peerIdentityPublicKey: ByteArray) {
-                ready.complete(peerIdentityPublicKey)
-            }
+            override fun onHandshakeComplete(peerIdentityPublicKey: ByteArray) = Unit
 
             override fun onApplicationMessage(message: AppMessage) {
                 handleMessage(linkRef, message)
             }
 
             override fun onClosed(reason: String) {
-                if (!ready.isCompleted) ready.cancel()
+                if (activeLink === linkRef) activeLink = null
             }
         }
 
+        val handshake = Handshake(authKey, secureStore.identityPrivateKey(), secureStore.identityPublicKey())
         val link = PeerLink(socket, candidate, handshake, scope, listener)
         linkRef = link
         activeLink = link
-        val identity = link.awaitReady(budgetMs)
-        if (identity == null) {
+        val identity = link.awaitReadyOrSuperseded(budgetMs)
+        if (identity == null || activeLink !== link) {
             if (activeLink === link) activeLink = null
             link.close("handshake_failed")
             return null
         }
+        if (!finalizeLink(link, identity)) {
+            if (activeLink === link) activeLink = null
+            return null
+        }
+        return link
+    }
 
+    /**
+     * Waits for readiness but aborts as soon as an incoming handshake wins the race, so a
+     * simultaneous open does not keep dialing a candidate that is already obsolete.
+     */
+    private suspend fun PeerLink.awaitReadyOrSuperseded(budgetMs: Long): ByteArray? {
+        val deadline = System.currentTimeMillis() + budgetMs
+        while (isCoroutineActive()) {
+            val current = activeLink
+            if (current != null && current !== this && current.isReady) return null
+            val remaining = deadline - System.currentTimeMillis()
+            if (remaining <= 0) return null
+            val identity = awaitReady(minOf(READY_POLL_MS, remaining))
+            if (identity != null) return identity
+            if (isClosed) return null
+        }
+        return null
+    }
+
+    /** Pins the peer on first contact, rejects a different identity, then sends Hello. */
+    private suspend fun finalizeLink(link: PeerLink, identity: ByteArray): Boolean {
         val identityHex = Hex.encode(identity)
         val pinned = repository.peer()
         if (pinned?.publicKeyHex != null && pinned.publicKeyHex != identityHex) {
-            if (activeLink === link) activeLink = null
             link.close("identity_mismatch")
             _events.tryEmit(EngineEvent.PeerIdentityMismatch)
-            return null
+            return false
         }
         if (pinned?.publicKeyHex == null) {
             repository.savePeer(null, identityHex, null)
+            pinnedPeerHex = identityHex
             _events.tryEmit(EngineEvent.PairingCompleted)
         }
-
         link.sendApplicationMessage(
             AppMessage.Hello(
                 Protocol.WIRE_VERSION,
@@ -393,7 +512,7 @@ class ConnectionEngine(
                 deviceName
             )
         )
-        return link
+        return true
     }
 
     private fun handleMessage(link: PeerLink?, message: AppMessage) {
@@ -485,14 +604,161 @@ class ConnectionEngine(
         return created
     }
 
+    private fun rendezvousFor(socket: DatagramSocket): PublicRendezvous {
+        val existing = rendezvous
+        if (existing != null && rendezvousSocket === socket) return existing
+        val created = PublicRendezvous(socket)
+        rendezvous = created
+        rendezvousSocket = socket
+        return created
+    }
+
     private fun routeDatagram(data: ByteArray, from: InetSocketAddress) {
         if (Wire.isPeerPacket(data)) {
-            activeLink?.onDatagram(data, from)
+            routePeerPacket(data, from)
             return
         }
         if (data.isNotEmpty() && data[0] == 'd'.code.toByte()) {
             dht?.onPacket(data, from)
+            return
         }
+        rendezvous?.onPacket(data, from)
+    }
+
+    /**
+     * Peer traffic normally belongs to the one active link. When no link exists, an authentic
+     * initiation is a peer that found us first (tracker, LAN beacon, DHT); it must be answered
+     * immediately instead of waiting for this side to dial, or a one-sided discovery can
+     * never connect.
+     */
+    private fun routePeerPacket(data: ByteArray, from: InetSocketAddress) {
+        if (!from.address.isReachableAddress() || from.port <= 0) return
+        val active = activeLink
+        val incoming = synchronized(incomingLock) { incomingLink }
+
+        if (Wire.kindOf(data) != Wire.KIND_INITIATION) {
+            (active?.takeIf { !it.isClosed } ?: incoming?.takeIf {
+                !it.isClosed && incomingFrom == from
+            })?.onDatagram(data, from)
+            return
+        }
+
+        // An initiation is only forwarded after it proves knowledge of the invitation, is
+        // not our own reflection, and matches the pinned peer once pairing has happened.
+        val authKey = routingAuthKey ?: return
+        if (!Handshake.isAuthenticInitiation(authKey, data)) return
+        val identity = Handshake.initiationIdentity(data) ?: return
+        val own = ownIdentity
+        if (own != null && identity.contentEquals(own)) return
+        val pinned = pinnedPeerHex
+        if (pinned != null && pinned != Hex.encode(identity)) return
+
+        if (active != null && !active.isClosed) {
+            active.onDatagram(data, from)
+            return
+        }
+        if (incoming != null && !incoming.isClosed && incomingFrom == from) {
+            incoming.onDatagram(data, from)
+            return
+        }
+        val socket = routingSocket ?: return
+        val privateKey = localIdentityPrivateKey ?: return
+        val publicKey = own ?: secureStore.identityPublicKey()
+
+        val handshake = Handshake(authKey, privateKey, publicKey)
+        synchronized(incomingLock) {
+            val existing = incomingLink
+            if (existing != null && existing !== active && !existing.isClosed) {
+                existing.close("superseded")
+            }
+            val created = createIncomingLink(socket, from, handshake)
+            incomingLink = created
+            incomingFrom = from
+            created.onDatagram(data, from)
+        }
+    }
+
+    private fun createIncomingLink(
+        socket: DatagramSocket,
+        from: InetSocketAddress,
+        handshake: Handshake
+    ): PeerLink {
+        lateinit var link: PeerLink
+        val listener = object : PeerLink.Listener {
+            override fun onHandshakeComplete(peerIdentityPublicKey: ByteArray) {
+                scope.launch { adoptIncoming(link, peerIdentityPublicKey) }
+            }
+
+            override fun onApplicationMessage(message: AppMessage) {
+                handleMessage(link, message)
+            }
+
+            override fun onClosed(reason: String) {
+                synchronized(incomingLock) {
+                    if (incomingLink === link) {
+                        incomingLink = null
+                        incomingFrom = null
+                    }
+                }
+                if (activeLink === link) activeLink = null
+            }
+        }
+        link = PeerLink(socket, from, handshake, scope, listener)
+        return link
+    }
+
+    /** Promotes a responder link that the peer initiated. Runs on the IO dispatcher. */
+    private suspend fun adoptIncoming(link: PeerLink, identity: ByteArray) {
+        if (link.isClosed) return
+        val current = activeLink
+        if (current != null && current !== link) {
+            if (current.isReady) {
+                link.close("duplicate")
+                return
+            }
+            current.close("superseded")
+        }
+        activeLink = link
+        synchronized(incomingLock) {
+            if (incomingLink === link) {
+                incomingLink = null
+                incomingFrom = null
+            }
+        }
+        if (!finalizeLink(link, identity)) {
+            if (activeLink === link) activeLink = null
+            return
+        }
+        val endpoint = link.remoteAddress
+        _status.value = ConnectionStatus(
+            ConnectionState.CONNECTED,
+            direct = if (isLocalAddress(endpoint.address)) DirectKind.LOCAL_NETWORK else DirectKind.INTERNET
+        )
+        // The main loop observes the ready link and runs the outbox flush once, so a message
+        // is never enqueued twice by two concurrent flushes.
+    }
+
+    /** Filters our own reflection and candidates that just failed a handshake. */
+    private fun isDialable(
+        candidate: InetSocketAddress,
+        socket: DatagramSocket,
+        client: PublicRendezvous,
+        tried: MutableMap<InetSocketAddress, Long>
+    ): Boolean {
+        if (candidate.port <= 0 || !candidate.address.isReachableAddress()) return false
+        val now = System.currentTimeMillis()
+        val last = tried[candidate]
+        if (last != null && now - last < CANDIDATE_RETRY_MS) return false
+        if (tried.size > MAX_TRACKED_CANDIDATES) {
+            tried.keys.removeIf { key -> now - (tried[key] ?: now) > CANDIDATE_RETRY_MS * 2 }
+        }
+        val ownPublic = client.cachedPublicEndpoint()
+        if (ownPublic != null && candidate == ownPublic) return false
+        if (candidate.port == socket.localPort) {
+            if (candidate.address.isLoopbackAddress || isLocalAddress(candidate.address)) return false
+            if (ownPublic != null && candidate.address == ownPublic.address) return false
+        }
+        return true
     }
 
     private fun startLanBeacon(topic: ByteArray) {
@@ -582,8 +848,15 @@ class ConnectionEngine(
         loopJob?.cancel()
         loopJob = null
         candidateSink = null
+        routingAuthKey = null
+        routingSocket = null
         activeLink?.close("stopped")
         activeLink = null
+        synchronized(incomingLock) {
+            incomingLink?.close("stopped")
+            incomingLink = null
+            incomingFrom = null
+        }
         lanBeacon?.stop()
         lanBeacon = null
         releaseMulticastLock()
@@ -592,6 +865,8 @@ class ConnectionEngine(
             transport = null
             dht = null
             dhtSocket = null
+            rendezvous = null
+            rendezvousSocket = null
         }
     }
 
@@ -617,9 +892,14 @@ class ConnectionEngine(
     companion object {
         private const val DISCOVERY_INTERVAL_MS = 4_000L
         private const val DISCOVERY_BUDGET_MS = 7_000L
+        private const val RENDEZVOUS_INTERVAL_MS = 7_000L
+        private const val RENDEZVOUS_BUDGET_MS = 8_000L
         private const val CANDIDATE_POLL_MS = 2_000L
+        private const val CANDIDATE_RETRY_MS = 15_000L
+        private const val MAX_TRACKED_CANDIDATES = 64
+        private const val READY_POLL_MS = 500L
         private const val UNABLE_AFTER_MS = 40_000L
-        private const val HANDSHAKE_BUDGET_MS = 12_000L
+        private const val HANDSHAKE_BUDGET_MS = 6_000L
         private const val QUICK_HANDSHAKE_MS = 4_000L
         private const val INITIAL_BACKOFF_MS = 1_500L
         private const val MAX_BACKOFF_MS = 30_000L

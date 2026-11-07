@@ -97,6 +97,8 @@ class PeerLink(
 
     val isReady: Boolean get() = synchronized(lock) { phase == Phase.READY }
 
+    val isClosed: Boolean get() = synchronized(lock) { phase == Phase.CLOSED }
+
     val peerIdentity: ByteArray? get() = synchronized(lock) { handshake.peerIdentityPublicKey }
 
     val remoteAddress: InetSocketAddress get() = remote

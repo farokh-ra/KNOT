@@ -14,7 +14,7 @@
     <string name="home_partner_section">Partner label (stored on this device only)</string>
     <string name="home_partner_hint">e.g. Alex’s phone</string>
     <string name="home_button_save_label">Save label</string>
-    <string name="home_privacy_note">Messages travel only over a direct, encrypted peer connection. Public DHT bootstrap nodes are used to help the two devices find each other; no server stores, forwards or reads chat content.</string>
+    <string name="home_privacy_note">Messages travel only over a direct, encrypted peer connection. Public DHT nodes, UDP trackers and STUN servers are used to help the two devices find each other; no server stores, forwards or reads chat content.</string>
     <string name="home_direct_only_note">A direct connection cannot exist on every network (carrier-grade NAT, symmetric NAT, strict firewalls, some VPNs). There is no relay fallback, so the app reports failure instead of routing your messages through a third party.</string>
     <string name="home_unpair">Forget partner</string>
     <string name="home_unpair_confirm_title">Forget this partner?</string>

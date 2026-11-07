@@ -135,10 +135,43 @@ Validation rules enforced on decode (each returns "invalid" rather than coercing
 
 ## 6. Discovery messages
 
-The DHT uses standard BEP 5 KRPC (`find_node`, `get_peers`, `announce_peer`) with
-`info_hash = topic` and `implied_port = 1`, so nodes record the observed UDP endpoint.
+All discovery uses the same UDP socket as the peer link, so the NAT mapping peers learn is the
+mapping chat packets leave from.
 
-The LAN beacon is a 27-byte broadcast on UDP port 41999:
+### DHT
+
+Standard BEP 5 KRPC (`find_node`, `get_peers`, `announce_peer`) with `info_hash = topic` and
+`implied_port = 1`, so nodes record the observed UDP endpoint.
+
+### STUN
+
+A single RFC 5389 binding request (20 bytes: type `0x0001`, length 0, magic `0x2112A442`,
+12-byte random transaction id). The reply's `XOR-MAPPED-ADDRESS` (or `MAPPED-ADDRESS`) gives the
+public IPv4 endpoint of the socket. No attribute beyond the mapped address is used, and no
+STUN server ever sees message content.
+
+### UDP trackers (BEP 15)
+
+Connect and announce use the standard BEP 15 layout, with `info_hash = topic`:
+
+```
+connect request   16 B: protocol id 0x41727101980 (8) || action 0 (4) || txid (4)
+connect response  16 B: action 0 (4) || txid (4) || connection id (8)
+announce request  98 B: connection id (8) || action 1 (4) || txid (4) || info_hash (20)
+                        || peer id (20) || downloaded (8) || left (8) || uploaded (8)
+                        || event (4) || ip (4, zero) || key (4) || num_want (4, -1) || port (2)
+announce response >=20 B: action 1 (4) || txid (4) || interval (4) || leechers (4)
+                        || seeders (4) || compact IPv4 peers (6 bytes each)
+```
+
+The advertised port is the STUN-learned public port when available, otherwise the local socket
+port. `event = started` is sent on the first announce and `event = none` afterwards. Responses
+are matched to the request by transaction id *and* source address. Trackers ignore the
+`announce` event semantics; only the peer list is used.
+
+### LAN beacon
+
+A 27-byte broadcast on UDP port 41999:
 
 ```
 "TPML" 0x01 || topic (20 bytes) || primary UDP port (u16)

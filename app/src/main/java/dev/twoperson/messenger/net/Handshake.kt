@@ -117,19 +117,8 @@ class Handshake(
      * packet" must not treat a bare `acceptInitiation == false` as the former, or anyone who
      * can send a UDP packet could tear down a healthy link.
      */
-    fun isAuthenticInitiation(packet: ByteArray): Boolean {
-        if (packet.size != Wire.HEADER_BYTES + NONCE_BYTES + 32 + 32 + 32) return false
-        if (!Wire.isPeerPacket(packet) || Wire.kindOf(packet) != Wire.KIND_INITIATION) return false
-        val body = packet.copyOfRange(Wire.HEADER_BYTES, packet.size - 32)
-        val mac = packet.copyOfRange(packet.size - 32, packet.size)
-        val expected = Crypto.hmacSha256(
-            authKey,
-            Wire.MAGIC,
-            byteArrayOf(Wire.KIND_INITIATION.toByte(), Wire.VERSION.toByte()),
-            body
-        )
-        return Crypto.constantTimeEquals(expected, mac)
-    }
+    fun isAuthenticInitiation(packet: ByteArray): Boolean =
+        isAuthenticInitiation(authKey, packet)
 
     fun confirmationPacket(): ByteArray? {
         val current = keys ?: return null
@@ -211,8 +200,37 @@ class Handshake(
 
     companion object {
         private const val NONCE_BYTES = 16
+        private const val INITIATION_BYTES = Wire.HEADER_BYTES + NONCE_BYTES + 32 + 32 + 32
         private val TRANSCRIPT_LABEL = "tpmsg/v1/transcript".toByteArray(Charsets.US_ASCII)
         private val KEY_LABEL = "tpmsg/v1/keys".toByteArray(Charsets.US_ASCII)
         private val CONFIRM_LABEL = "tpmsg/v1/confirm".toByteArray(Charsets.US_ASCII)
+
+        /**
+         * MAC-only check that [packet] is an initiation proving knowledge of the invitation.
+         *
+         * Unlike [Handshake.acceptInitiation] this does not generate an ephemeral key or touch
+         * any state, so the UDP reader may call it for every packet with no side effects.
+         */
+        fun isAuthenticInitiation(authKey: ByteArray, packet: ByteArray): Boolean {
+            if (packet.size != INITIATION_BYTES) return false
+            if (!Wire.isPeerPacket(packet) || Wire.kindOf(packet) != Wire.KIND_INITIATION) return false
+            val body = packet.copyOfRange(Wire.HEADER_BYTES, packet.size - 32)
+            val mac = packet.copyOfRange(packet.size - 32, packet.size)
+            val expected = Crypto.hmacSha256(
+                authKey,
+                Wire.MAGIC,
+                byteArrayOf(Wire.KIND_INITIATION.toByte(), Wire.VERSION.toByte()),
+                body
+            )
+            return Crypto.constantTimeEquals(expected, mac)
+        }
+
+        /** The long-term identity key carried by a well-shaped initiation, or null. */
+        fun initiationIdentity(packet: ByteArray): ByteArray? {
+            if (packet.size != INITIATION_BYTES) return null
+            if (!Wire.isPeerPacket(packet) || Wire.kindOf(packet) != Wire.KIND_INITIATION) return null
+            val start = Wire.HEADER_BYTES + NONCE_BYTES + 32
+            return packet.copyOfRange(start, start + 32)
+        }
     }
 }

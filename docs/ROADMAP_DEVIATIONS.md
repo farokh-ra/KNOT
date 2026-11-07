@@ -18,9 +18,9 @@ security requirement from the roadmap, and replacing only the discovery layer:
 
 | Roadmap expectation | This implementation |
 |---|---|
-| Hyperswarm DHT discovery on a topic from the invitation secret | BitTorrent mainline DHT (BEP 5) `get_peers` / `announce_peer` on a topic derived by HMAC-SHA256 from the invitation; same guarantee that the raw secret is never published |
+| Hyperswarm DHT discovery on a topic from the invitation secret | Three public rendezvous paths on a topic derived by HMAC-SHA256 from the invitation: BEP 15 UDP trackers on ports 80/443, mainline DHT (BEP 5) `get_peers` / `announce_peer`, and STUN for the socket's translated port; same guarantee that the raw secret is never published |
 | Noise-encrypted peer connection | X25519 ephemeral agreement + HMAC-SHA256 authentication + HKDF-SHA256 + AES-256-GCM frames, with a confirmation MAC and replay window (Noise-XX-style, custom construction) |
-| Direct connection with NAT traversal | UDP hole punching toward the endpoint learned from the DHT, plus a same-subnet broadcast beacon |
+| Direct connection with NAT traversal | UDP hole punching toward the endpoint learned from the tracker/STUN/DHT rendezvous, plus a same-subnet broadcast beacon; incoming authenticated initiations are answered even when this side is not dialing |
 | Relay fallback removed / disabled | No relay, TURN or forwarding code exists at all |
 | File transfer replaced by a small messaging protocol | Versioned binary schema with strict validation, chunking, acknowledgements, duplicate suppression |
 | Local storage and history | SQLite in the app sandbox; Keystore-wrapped identity and invitation |

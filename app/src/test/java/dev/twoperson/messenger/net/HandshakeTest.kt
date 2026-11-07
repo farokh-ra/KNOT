@@ -6,6 +6,7 @@ import dev.twoperson.messenger.crypto.X25519
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.security.SecureRandom
@@ -89,6 +90,23 @@ class HandshakeTest {
         assertFalse(a.ready)
         assertTrue(a.acceptConfirmation(b.confirmationPacket()!!))
         assertTrue(a.ready)
+    }
+
+    @Test
+    fun staticInitiationCheckProvesInvitationWithoutSideEffects() {
+        val secret = Invite.newSecret()
+        val authKey = Invite.authKey(secret)
+        val identity = Identity()
+        val packet = Handshake(authKey, identity.privateKey, identity.publicKey).initiationPacket
+
+        assertTrue(Handshake.isAuthenticInitiation(authKey, packet))
+        assertArrayEquals(identity.publicKey, Handshake.initiationIdentity(packet))
+        assertFalse(Handshake.isAuthenticInitiation(Invite.authKey(Invite.newSecret()), packet))
+
+        val tampered = packet.copyOf()
+        tampered[tampered.size - 1] = (tampered[tampered.size - 1].toInt() xor 1).toByte()
+        assertFalse(Handshake.isAuthenticInitiation(authKey, tampered))
+        assertNull(Handshake.initiationIdentity(tampered.copyOfRange(0, 12)))
     }
 
     @Test
