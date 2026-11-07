@@ -14,8 +14,14 @@ import java.nio.ByteBuffer
 object Chunking {
 
     const val HEADER_BYTES = 8
-    const val MAX_CHUNK_DATA = 480
-    const val MAX_CHUNKS = 64
+
+    /**
+     * Sized so one chunk plus the encrypted-frame overhead stays inside one Ethernet-sized
+     * datagram. Larger chunks cut per-packet overhead and let a 16 KiB file block travel in
+     * roughly fifteen frames instead of thirty-five.
+     */
+    const val MAX_CHUNK_DATA = 1100
+    const val MAX_CHUNKS = 96
 
     fun chunk(chunkId: Int, payload: ByteArray): List<ByteArray> {
         require(payload.isNotEmpty()) { "empty payload" }
@@ -45,7 +51,10 @@ object Chunking {
 class Reassembler(
     private val maxMessageBytes: Int = Protocol.MAX_APP_MESSAGE_BYTES,
     private val maxAgeMs: Long = 60_000L,
-    private val maxPending: Int = 8
+    // The reliable link can have 4096 frames in flight (~270 maximum-size file blocks).
+    // Keeping more assemblies pending than that prevents a busy file transfer from evicting
+    // chunks that are still legitimately in transit.
+    private val maxPending: Int = 512
 ) {
 
     private class Pending(val count: Int, var updatedAt: Long) {

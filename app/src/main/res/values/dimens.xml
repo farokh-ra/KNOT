@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Chat bubble corners: the corner nearest the sender is tighter, like a speech tail. -->
+    <dimen name="bubble_corner">18dp</dimen>
+    <dimen name="bubble_corner_tail">6dp</dimen>
+</resources>

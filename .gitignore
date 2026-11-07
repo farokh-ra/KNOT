@@ -12,6 +12,7 @@ captures/
 # Local toolchain downloaded for this machine (not part of the project)
 .tools/
 .freebuff/
+opencode.exe
 
 # Signing material: never commit keys or their passwords
 signing/

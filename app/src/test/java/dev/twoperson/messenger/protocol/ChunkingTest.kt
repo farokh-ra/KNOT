@@ -26,7 +26,7 @@ class ChunkingTest {
     @Test
     fun rejectsInconsistentChunkCount() {
         val reassembler = Reassembler()
-        val good = Chunking.chunk(7, ByteArray(1000) { 1 })
+        val good = Chunking.chunk(7, ByteArray(Chunking.MAX_CHUNK_DATA + 100) { 1 })
         assertNull(reassembler.accept(good[0], 1))
         val header = good[0].copyOf()
         header[7] = (good.size + 5).toByte()
@@ -54,5 +54,20 @@ class ChunkingTest {
             assembled = reassembler.accept(chunks[index], 1_001) ?: assembled
         }
         assertNull(assembled)
+    }
+
+    @Test
+    fun reassemblesPayloadAtMaximumChunkCount() {
+        val payload = ByteArray(Chunking.MAX_CHUNK_DATA * (Chunking.MAX_CHUNKS - 1)) {
+            (it * 31 % 251).toByte()
+        }
+        val chunks = Chunking.chunk(11, payload)
+        assertTrue(chunks.size in 2..Chunking.MAX_CHUNKS)
+        val reassembler = Reassembler(maxMessageBytes = payload.size)
+        var assembled: ByteArray? = null
+        for (chunk in chunks.reversed()) {
+            assembled = reassembler.accept(chunk, 5_000) ?: assembled
+        }
+        assertArrayEquals(payload, assembled)
     }
 }

@@ -8,7 +8,7 @@ package dev.twoperson.messenger.net
  *   5      protocol version
  *   6..    kind-specific body
  *
- * Version 2 details:
+ * Version 4 details:
  *  - DATA frames carry their own reliable 8-byte sequence inside the encrypted payload
  *    (`[seq][chunk]`), so ordering and acknowledgements never depend on the AEAD counter;
  *  - the AEAD counter is a pure nonce (with the replay window), and ACK/CONTROL frames do
@@ -17,7 +17,7 @@ package dev.twoperson.messenger.net
  */
 object Wire {
 
-    const val VERSION = 2
+    const val VERSION = 4
 
     const val KIND_INITIATION = 1
     const val KIND_CONFIRMATION = 2

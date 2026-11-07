@@ -37,8 +37,10 @@ class UdpTransport(
             created.bind(InetSocketAddress(0))
             created.soTimeout = 1000
             try {
-                created.sendBufferSize = 256 * 1024
-                created.receiveBufferSize = 256 * 1024
+                // Large socket buffers matter for bulk transfer: without them a fast Wi-Fi
+                // link drops datagrams while the app is writing the next block to disk.
+                created.sendBufferSize = 4 * 1024 * 1024
+                created.receiveBufferSize = 4 * 1024 * 1024
             } catch (ignored: SocketException) {
                 // Buffer sizes are a hint; some devices clamp them.
             }

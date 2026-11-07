@@ -22,6 +22,7 @@ import dev.twoperson.messenger.R
 import dev.twoperson.messenger.databinding.ActivityPairingBinding
 import dev.twoperson.messenger.engine.ConnectionState
 import dev.twoperson.messenger.service.ConnectionService
+import dev.twoperson.messenger.util.AppVisibility
 import kotlinx.coroutines.launch
 
 class PairingActivity : AppCompatActivity() {
@@ -95,7 +96,13 @@ class PairingActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
+        AppVisibility.onActivityStarted()
         if (container.engine.isConfigured()) ConnectionService.ensureRunning(this)
+    }
+
+    override fun onStop() {
+        AppVisibility.onActivityStopped()
+        super.onStop()
     }
 
     override fun onSupportNavigateUp(): Boolean {

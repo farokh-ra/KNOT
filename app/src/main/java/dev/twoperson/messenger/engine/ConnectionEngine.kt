@@ -3,6 +3,7 @@ package dev.twoperson.messenger.engine
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
+import android.net.Uri
 import android.net.wifi.WifiManager
 import android.os.Build
 import dev.twoperson.messenger.crypto.Crypto
@@ -40,6 +41,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.net.DatagramSocket
 import java.net.InetAddress
@@ -84,17 +86,46 @@ sealed interface EngineEvent {
 class ConnectionEngine(
     context: Context,
     private val secureStore: SecureStore,
-    private val repository: MessageRepository
+    private val repository: MessageRepository,
+    /** Invoked only after a new incoming message (or completed file) was durably stored. */
+    private val onIncomingMessage: suspend (Message) -> Unit = {}
 ) {
 
     private val appContext = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    private data class IncomingApp(val link: PeerLink?, val message: AppMessage)
+
+    /**
+     * Application messages are processed by one serial worker. File data must be appended in
+     * transport order; launching one coroutine per datagram could reorder 16 KiB blocks.
+     */
+    private val messageQueue = Channel<IncomingApp>(Channel.UNLIMITED)
+
+    private val fileTransfers = FileTransferManager(
+        appContext,
+        repository,
+        scope,
+        onIncomingFileReady = { message -> onIncomingMessage(message) }
+    )
 
     private val _status = MutableStateFlow(ConnectionStatus())
     val status: StateFlow<ConnectionStatus> = _status.asStateFlow()
 
     private val _events = MutableSharedFlow<EngineEvent>(extraBufferCapacity = 8)
     val events: SharedFlow<EngineEvent> = _events.asSharedFlow()
+
+    private val messageWorker: Job = scope.launch {
+        for (incoming in messageQueue) {
+            try {
+                processMessage(incoming.link, incoming.message)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // A malformed or failing message must not stop later messages.
+            }
+        }
+    }
 
     private val restartMutex = Mutex()
 
@@ -233,6 +264,16 @@ class ConnectionEngine(
     }
 
     /**
+     * Cancels in-flight transfers first, then deletes the local history and the app-private
+     * copies that only those messages referenced. SAF originals owned by the user are untouched.
+     */
+    suspend fun clearConversation() = withContext(Dispatchers.IO) {
+        fileTransfers.cancelAll()
+        val removed = repository.clearConversation()
+        fileTransfers.deleteLocalFiles(removed)
+    }
+
+    /**
      * Stores the message locally first, then tries to send it. Returns false only when the
      * text itself is unacceptable; being offline is not a failure, it stays queued.
      */
@@ -252,6 +293,42 @@ class ConnectionEngine(
             // Send window was full; the outbox flusher retries as acknowledgements arrive.
             scope.launch { flushOutbox(link) }
         }
+        return true
+    }
+
+    /**
+     * Queues a file of any size. It is persisted immediately and streamed when the direct link
+     * is available; disconnects pause the transfer and the receiver's acknowledged offset is
+     * used to resume automatically.
+     */
+    suspend fun sendFile(uri: Uri, displayName: String, mimeType: String, size: Long): Boolean {
+        if (!isConfigured()) return false
+        return fileTransfers.enqueueFile(uri, displayName, mimeType, size) != null
+    }
+
+    /**
+     * Re-queues one failed outgoing message or file. A connected link is nudged immediately so
+     * the user does not have to wait for the next reconnect or queue poll.
+     */
+    suspend fun retryMessage(id: String): Boolean {
+        val retried = repository.retryMessage(id)
+        if (!retried) return false
+        val link = activeLink
+        if (link != null && link.isReady) {
+            scope.launch { flushOutbox(link) }
+            fileTransfers.onLinkReady(link)
+        }
+        return true
+    }
+
+    /** Deletes one message and any app-private file copy that belonged to it. */
+    suspend fun deleteMessage(id: String): Boolean {
+        val message = repository.messageById(id) ?: return false
+        // Stop an active transfer before its row disappears, otherwise it would keep writing
+        // to a part file or streaming bytes for a message the user just removed.
+        fileTransfers.cancelMessage(message)
+        val removed = repository.deleteMessage(id) ?: return false
+        fileTransfers.deleteLocalFiles(listOf(removed))
         return true
     }
 
@@ -309,43 +386,47 @@ class ConnectionEngine(
 
                 var connectedLink: PeerLink? = null
                 val tried = HashMap<InetSocketAddress, Long>()
-
-                // Reconnect fast path: the endpoint that last carried authenticated traffic is
-                // almost always still correct, and after a peer restart its initiation already
-                // told us the new address. Waiting for a fresh lookup instead costs seconds.
-                lastPeerEndpoint?.let { hint ->
-                    _status.value = ConnectionStatus(ConnectionState.CONNECTING)
-                    tried[hint] = System.currentTimeMillis()
-                    connectedLink = attemptConnection(hint, authKey, socket, QUICK_HANDSHAKE_MS)
-                }
-
-                var phaseStart = System.currentTimeMillis()
-                while (isCoroutineActive() && connectedLink == null) {
-                    val adopted = activeLink
-                    if (adopted != null && adopted.isReady) {
-                        connectedLink = adopted
-                        break
+                try {
+                    // Reconnect fast path: the endpoint that last carried authenticated traffic
+                    // is almost always still correct, and after a peer restart its initiation
+                    // already told us the new address. Waiting for a fresh lookup costs seconds.
+                    lastPeerEndpoint?.let { hint ->
+                        _status.value = ConnectionStatus(ConnectionState.CONNECTING)
+                        tried[hint] = System.currentTimeMillis()
+                        connectedLink = attemptConnection(hint, authKey, socket, QUICK_HANDSHAKE_MS)
                     }
-                    val candidate = withTimeoutOrNull(CANDIDATE_POLL_MS) { candidates.receive() }
-                    if (candidate == null) {
-                        if (System.currentTimeMillis() - phaseStart > UNABLE_AFTER_MS &&
-                            _status.value.state != ConnectionState.UNABLE_TO_CONNECT
-                        ) {
-                            _status.value = ConnectionStatus(ConnectionState.UNABLE_TO_CONNECT)
+
+                    var phaseStart = System.currentTimeMillis()
+                    while (isCoroutineActive() && connectedLink == null) {
+                        val adopted = activeLink
+                        if (adopted != null && adopted.isReady) {
+                            connectedLink = adopted
+                            break
                         }
-                        continue
+                        val candidate = withTimeoutOrNull(CANDIDATE_POLL_MS) { candidates.receive() }
+                        if (candidate == null) {
+                            if (System.currentTimeMillis() - phaseStart > UNABLE_AFTER_MS &&
+                                _status.value.state != ConnectionState.UNABLE_TO_CONNECT
+                            ) {
+                                _status.value = ConnectionStatus(ConnectionState.UNABLE_TO_CONNECT)
+                            }
+                            continue
+                        }
+                        if (!isConfigured()) break
+                        if (!isDialable(candidate, socket, rendezvousClient, tried)) continue
+                        tried[candidate] = System.currentTimeMillis()
+                        _status.value = ConnectionStatus(ConnectionState.CONNECTING)
+                        connectedLink = attemptConnection(candidate, authKey, socket, HANDSHAKE_BUDGET_MS)
+                        phaseStart = System.currentTimeMillis()
                     }
-                    if (!isConfigured()) break
-                    if (!isDialable(candidate, socket, rendezvousClient, tried)) continue
-                    tried[candidate] = System.currentTimeMillis()
-                    _status.value = ConnectionStatus(ConnectionState.CONNECTING)
-                    connectedLink = attemptConnection(candidate, authKey, socket, HANDSHAKE_BUDGET_MS)
-                    phaseStart = System.currentTimeMillis()
+                } finally {
+                    // Also runs when an unexpected exception unwinds the loop: an orphaned
+                    // discovery job would keep querying trackers and filling a channel that
+                    // nobody reads for the lifetime of the process.
+                    discoveryJob.cancel()
+                    candidateSink = null
+                    candidates.close()
                 }
-
-                discoveryJob.cancel()
-                candidateSink = null
-                candidates.close()
 
                 val connected = connectedLink
                 if (connected == null) {
@@ -362,8 +443,11 @@ class ConnectionEngine(
                     direct = if (isLocalAddress(endpoint.address)) DirectKind.LOCAL_NETWORK else DirectKind.INTERNET
                 )
                 repository.resetFailedToPending()
-                flushOutbox(connected)
+                fileTransfers.onLinkReady(connected)
+                val outboxJob = scope.launch { outboxLoop(connected) }
                 val reason = connected.awaitClosed()
+                outboxJob.cancel()
+                fileTransfers.onLinkClosed(connected)
                 if (activeLink === connected) activeLink = null
                 // Keep the peer endpoint the link last used: after a NAT rebind or a peer
                 // restart this is the address that actually works.
@@ -516,53 +600,65 @@ class ConnectionEngine(
     }
 
     private fun handleMessage(link: PeerLink?, message: AppMessage) {
-        scope.launch {
-            when (message) {
-                is AppMessage.Text -> {
-                    val id = Hex.encode(message.messageId)
-                    val sender = repository.peer()?.deviceId ?: "peer"
-                    // Store before acknowledging, as the protocol requires.
-                    repository.insertIncoming(id, message.body, message.createdAt, message.sequence, sender)
-                    repository.refresh()
-                    (link ?: activeLink)?.sendApplicationMessage(AppMessage.Ack(message.messageId))
-                }
+        messageQueue.trySend(IncomingApp(link, message))
+    }
 
-                is AppMessage.Ack -> {
-                    repository.setState(Hex.encode(message.messageId), MessageState.DELIVERED)
-                }
-
-                is AppMessage.Hello -> {
-                    val handshakeIdentity = link?.peerIdentity
-                    if (message.version != Protocol.WIRE_VERSION ||
-                        (handshakeIdentity != null && !message.identityPublicKey.contentEquals(handshakeIdentity))
-                    ) {
-                        (link ?: activeLink)?.close("identity_mismatch")
-                        _events.tryEmit(EngineEvent.PeerIdentityMismatch)
-                        return@launch
-                    }
-                    val deviceId = Hex.encode(message.deviceId)
-                    val pinned = repository.peer()
-                    if (pinned?.deviceId != null && pinned.deviceId != deviceId) {
-                        (link ?: activeLink)?.close("identity_mismatch")
-                        _events.tryEmit(EngineEvent.PeerIdentityMismatch)
-                        return@launch
-                    }
-                    repository.savePeer(deviceId, Hex.encode(message.identityPublicKey), message.displayName)
-                    _status.update { it.copy(peerName = message.displayName) }
-                    _events.tryEmit(EngineEvent.PairingCompleted)
+    private suspend fun processMessage(link: PeerLink?, message: AppMessage) {
+        when (message) {
+            is AppMessage.Text -> {
+                val id = Hex.encode(message.messageId)
+                val sender = repository.peer()?.deviceId ?: "peer"
+                // Store before acknowledging, as the protocol requires.
+                val stored = repository.insertIncoming(
+                    id, message.body, message.createdAt, message.sequence, sender
+                )
+                (link ?: activeLink)?.sendApplicationMessage(AppMessage.Ack(message.messageId))
+                if (stored) {
+                    repository.messageById(id)?.let { onIncomingMessage(it) }
                 }
             }
+
+            is AppMessage.Ack -> {
+                repository.setState(Hex.encode(message.messageId), MessageState.DELIVERED)
+            }
+
+            is AppMessage.Hello -> {
+                val handshakeIdentity = link?.peerIdentity
+                if (message.version != Protocol.WIRE_VERSION ||
+                    (handshakeIdentity != null && !message.identityPublicKey.contentEquals(handshakeIdentity))
+                ) {
+                    (link ?: activeLink)?.close("identity_mismatch")
+                    _events.tryEmit(EngineEvent.PeerIdentityMismatch)
+                    return
+                }
+                val deviceId = Hex.encode(message.deviceId)
+                val pinned = repository.peer()
+                if (pinned?.deviceId != null && pinned.deviceId != deviceId) {
+                    (link ?: activeLink)?.close("identity_mismatch")
+                    _events.tryEmit(EngineEvent.PeerIdentityMismatch)
+                    return
+                }
+                repository.savePeer(deviceId, Hex.encode(message.identityPublicKey), message.displayName)
+                _status.update { it.copy(peerName = message.displayName) }
+                _events.tryEmit(EngineEvent.PairingCompleted)
+            }
+
+            is AppMessage.FileOffer,
+            is AppMessage.FileData,
+            is AppMessage.FileEnd,
+            is AppMessage.FileAck,
+            is AppMessage.FileDone -> fileTransfers.handle(message, link ?: activeLink)
         }
     }
 
     /**
-     * Delivers everything still queued. The link has a bounded send window, so this waits for
-     * acknowledgements instead of dropping the tail of the outbox.
+     * Delivers text messages still queued. Bulk file data is handled by [FileTransferManager]
+     * and pauses whenever this queue has work, so chat stays responsive during huge transfers.
      */
     private suspend fun flushOutbox(link: PeerLink) {
         var rounds = 0
         while (link.isReady && rounds < MAX_FLUSH_ROUNDS) {
-            val pending = repository.pendingOutgoing()
+            val pending = repository.pendingTextOutgoing()
             if (pending.isEmpty()) return
             var blocked = false
             for (message in pending) {
@@ -572,6 +668,28 @@ class ConnectionEngine(
             if (!blocked) return
             delay(FLUSH_RETRY_MS)
             rounds++
+        }
+    }
+
+    private suspend fun outboxLoop(link: PeerLink) {
+        while (link.isReady) {
+            try {
+                val pending = repository.pendingTextOutgoing()
+                if (pending.isEmpty()) {
+                    delay(OUTBOX_IDLE_MS)
+                    continue
+                }
+                var blocked = false
+                for (message in pending) {
+                    if (!link.isReady) return
+                    if (!deliver(link, message)) blocked = true
+                }
+                if (blocked) delay(FLUSH_RETRY_MS)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                delay(OUTBOX_IDLE_MS)
+            }
         }
     }
 
@@ -850,6 +968,7 @@ class ConnectionEngine(
         candidateSink = null
         routingAuthKey = null
         routingSocket = null
+        activeLink?.let { fileTransfers.onLinkClosed(it) }
         activeLink?.close("stopped")
         activeLink = null
         synchronized(incomingLock) {
@@ -907,6 +1026,7 @@ class ConnectionEngine(
         private const val RESTART_DEBOUNCE_MS = 3_000L
         private const val RESTART_SETTLE_MS = 250L
         private const val FLUSH_RETRY_MS = 120L
+        private const val OUTBOX_IDLE_MS = 400L
         private const val MAX_FLUSH_ROUNDS = 200
     }
 }

@@ -1,8 +1,6 @@
 package dev.twoperson.messenger.service
 
 import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
@@ -46,7 +44,7 @@ class ConnectionService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        createChannel()
+        MessageNotifications.ensureChannels(this)
         engine.onForeground()
         statusJob = scope.launch {
             engine.status.collect { status ->
@@ -77,7 +75,7 @@ class ConnectionService : Service() {
         try {
             ServiceCompat.startForeground(
                 this,
-                NOTIFICATION_ID,
+                MessageNotifications.SERVICE_NOTIFICATION_ID,
                 notification,
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
@@ -94,11 +92,17 @@ class ConnectionService : Service() {
     }
 
     private fun publish(status: ConnectionStatus) {
+        // Without POST_NOTIFICATIONS the foreground notification cannot be displayed; the
+        // service itself keeps running and is still listed in the system task manager.
+        if (!MessageNotifications.permissionGranted(this)) return
         val notification = buildNotification(status)
         try {
-            if (!NotificationManagerCompat.from(this).areNotificationsEnabled()) return
-            NotificationManagerCompat.from(this).notify(NOTIFICATION_ID, notification)
+            NotificationManagerCompat.from(this)
+                .notify(MessageNotifications.SERVICE_NOTIFICATION_ID, notification)
+        } catch (e: SecurityException) {
+            // Permission was revoked between the check and the call.
         } catch (e: Exception) {
+            // OEM notification restrictions must not tear down the service.
         }
     }
 
@@ -124,39 +128,20 @@ class ConnectionService : Service() {
 
             ConnectionState.IDLE -> getString(R.string.notif_text_idle)
         }
-        return NotificationCompat.Builder(this, CHANNEL_ID)
+        return NotificationCompat.Builder(this, MessageNotifications.SERVICE_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_link)
             .setContentTitle(getString(R.string.notif_title))
             .setContentText(text)
             .setContentIntent(openApp)
             .setOngoing(true)
             .setShowWhen(false)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setPriority(NotificationCompat.PRIORITY_MIN)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setSilent(true)
             .build()
     }
 
-    private fun createChannel() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-        val manager = getSystemService(NotificationManager::class.java) ?: return
-        if (manager.getNotificationChannel(CHANNEL_ID) != null) return
-        val channel = NotificationChannel(
-            CHANNEL_ID,
-            getString(R.string.notif_channel_name),
-            NotificationManager.IMPORTANCE_LOW
-        ).apply {
-            description = getString(R.string.notif_channel_desc)
-            setShowBadge(false)
-            enableVibration(false)
-        }
-        manager.createNotificationChannel(channel)
-    }
-
     companion object {
-        private const val CHANNEL_ID = "connection"
-        private const val NOTIFICATION_ID = 1001
-
         /** Idempotent: safe to call from every activity start. */
         fun ensureRunning(context: Context) {
             try {

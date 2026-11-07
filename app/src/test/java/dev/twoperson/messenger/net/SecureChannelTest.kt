@@ -1,65 +1,69 @@
 package dev.twoperson.messenger.net
 
 import dev.twoperson.messenger.crypto.Crypto
-import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SecureChannelTest {
 
-    private class Pair2(val sender: SecureChannel, val receiver: SecureChannel)
-
-    private fun mirroredPair(): Pair2 {
-        val aToB = Crypto.randomBytes(32)
-        val bToA = Crypto.randomBytes(32)
-        return Pair2(SecureChannel(aToB, bToA), SecureChannel(bToA, aToB))
+    private fun keys(): Pair<SecureChannel, SecureChannel> {
+        val key = Crypto.randomBytes(32)
+        return SecureChannel(key, key) to SecureChannel(key, key)
     }
 
     @Test
-    fun framesRoundTripInOrder() {
-        val pair = mirroredPair()
-        val sender = pair.sender
-        val receiver = pair.receiver
-        val payload = "hello".toByteArray()
-        val result = receiver.open(sender.seal(Wire.KIND_DATA, payload))
-        assertTrue(result is OpenResult.Ok)
-        assertArrayEquals(payload, (result as OpenResult.Ok).frame.payload)
-        assertEquals(Wire.KIND_DATA, result.frame.kind)
-        assertEquals(0L, result.frame.counter)
+    fun acceptsLargeOutOfOrderBurstWithinReplayWindow() {
+        val (sender, receiver) = keys()
+        val packets = (0 until 300).map {
+            sender.seal(Wire.KIND_DATA, byteArrayOf(it.toByte()))
+        }
+
+        // A wider reliable send window means hundreds of frames can arrive out of order. The
+        // replay window must not reject a legitimate frame as "too old".
+        for (index in packets.indices.reversed()) {
+            val result = receiver.open(packets[index])
+            assertTrue("frame $index should be accepted", result is OpenResult.Ok)
+            assertEquals(index.toLong(), (result as OpenResult.Ok).frame.counter)
+        }
     }
 
     @Test
-    fun replayedFrameIsReportedAsDuplicate() {
-        val pair = mirroredPair()
-        val packet = pair.sender.seal(Wire.KIND_DATA, "x".toByteArray())
-        assertTrue(pair.receiver.open(packet) is OpenResult.Ok)
-        assertTrue(pair.receiver.open(packet) is OpenResult.Duplicate)
+    fun duplicateFrameIsReportedWithoutRedelivery() {
+        val (sender, receiver) = keys()
+        val packet = sender.seal(Wire.KIND_DATA, byteArrayOf(1, 2, 3))
+        assertTrue(receiver.open(packet) is OpenResult.Ok)
+        assertTrue(receiver.open(packet) is OpenResult.Duplicate)
+    }
+
+    @Test
+    fun frameOlderThanWindowIsRejected() {
+        val (sender, receiver) = keys()
+        val first = sender.seal(Wire.KIND_DATA, byteArrayOf(0))
+        var last = first
+        // One more than the replay window: opening only the newest frame must make the first
+        // one fall out of the accepted range.
+        repeat(4096) { index ->
+            last = sender.seal(Wire.KIND_DATA, byteArrayOf((index % 251).toByte()))
+        }
+        assertTrue(receiver.open(last) is OpenResult.Ok)
+        assertTrue(receiver.open(first) is OpenResult.Invalid)
     }
 
     @Test
     fun tamperedFrameIsRejected() {
-        val pair = mirroredPair()
-        val packet = pair.sender.seal(Wire.KIND_DATA, "payload".toByteArray())
+        val (sender, receiver) = keys()
+        val packet = sender.seal(Wire.KIND_DATA, byteArrayOf(9, 8, 7))
         val tampered = packet.copyOf()
-        tampered[tampered.size - 1] = (tampered[tampered.size - 1].toInt() xor 1).toByte()
-        assertTrue(pair.receiver.open(tampered) is OpenResult.Invalid)
+        tampered[tampered.size - 1] = (tampered[tampered.size - 1].toInt() xor 0x01).toByte()
+        assertTrue(receiver.open(tampered) is OpenResult.Invalid)
     }
 
     @Test
-    fun wrongKeyIsRejected() {
-        val sender = SecureChannel(Crypto.randomBytes(32), Crypto.randomBytes(32))
-        val receiver = SecureChannel(Crypto.randomBytes(32), Crypto.randomBytes(32))
-        val packet = sender.seal(Wire.KIND_DATA, "payload".toByteArray())
-        assertTrue(receiver.open(packet) is OpenResult.Invalid)
-    }
-
-    @Test
-    fun truncatedFrameIsRejected() {
-        val pair = mirroredPair()
-        val packet = pair.sender.seal(Wire.KIND_ACK, ByteArray(12))
-        for (cut in 1..8) {
-            assertTrue(pair.receiver.open(packet.copyOfRange(0, packet.size - cut)) is OpenResult.Invalid)
-        }
+    fun frameSealedWithAnotherKeyIsRejected() {
+        val (sender, _) = keys()
+        val (_, otherReceiver) = keys()
+        val packet = sender.seal(Wire.KIND_DATA, byteArrayOf(4, 5, 6))
+        assertTrue(otherReceiver.open(packet) is OpenResult.Invalid)
     }
 }

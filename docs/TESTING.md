@@ -5,7 +5,7 @@
 All checks below were run on the build machine during development. Rebuild locally with the
 included Gradle wrapper to reproduce them.
 
-### JVM unit and integration tests — 53 tests, all passing
+### JVM unit and integration tests — 68 tests, all passing
 
 ```bash
 ./gradlew :app:testDebugUnitTest
@@ -16,11 +16,12 @@ included Gradle wrapper to reproduce them.
 | `crypto.X25519Test` (3) | RFC 7748 section 6.1 public keys and shared secret; all-zero (low-order) point rejected; key pairs agree |
 | `crypto.CryptoTest` (5) | HKDF-SHA256 matches RFC 5869 test case 1; AES-GCM round trip; tampered ciphertext and wrong AAD are rejected |
 | `crypto.InviteTest` (5) | Code round trip, copy-artifact tolerance, malformed/truncated codes rejected, topic deterministic, 20 bytes, derived (not the secret) |
-| `protocol.AppCodecTest` (11) | Round trips (including Unicode), unknown types rejected, truncated payloads rejected, invalid UTF-8 rejected, empty text rejected, absurd timestamps rejected, wrong version rejected, maximum-size text encodable |
-| `protocol.ChunkingTest` (4) | Out-of-order reassembly, duplicate tolerance, inconsistent counts rejected, oversized chunks rejected, stale assemblies expire |
-| `net.SecureChannelTest` (5) | Encrypted frame round trip, replay reported as duplicate, tampering rejected, wrong key rejected, truncation rejected |
+| `protocol.AppCodecTest` (20) | Text and file round trips (including Unicode), unknown types rejected, truncated payloads rejected, invalid UTF-8 rejected, empty text rejected, absurd timestamps rejected, wrong version rejected, maximum-size text encodable, file offer/data/ack/end/done validation, digest fields and integrity reasons round trip, unknown done reasons rejected, zero-byte offers, oversize rejection, filename sanitization and MIME limits |
+| `protocol.FileDigestTest` (4) | FNV-1a matches published vectors, chunked updates equal a one-shot hash, offset/length slices are respected, different content yields a different digest |
+| `protocol.ChunkingTest` (5) | Out-of-order reassembly, duplicate tolerance, inconsistent counts rejected, oversized chunks rejected, stale assemblies expire, maximum application message reassembled |
+| `net.SecureChannelTest` (5) | Encrypted frame round trip, a 300-frame out-of-order burst inside the widened replay window, duplicate reported without redelivery, frame older than the window rejected, tampering and wrong-key frames rejected |
 | `net.HandshakeTest` (7) | Both sides derive mirrored keys, wrong invitation cannot join, tampered MAC rejected, retransmissions idempotent, cross-session confirmation rejected, keys bound to the transcript, static initiation check and identity extraction |
-| `net.PeerLinkTest` (5) | **Full stack over loopback UDP**: real handshake, identity exchange, encrypted text delivery and transport acknowledgement; wrong invitation never connects; **both directions keep working across transport ACKs and idle heartbeats** (the interleaving that stalled the v1 stream and closed the link); a spoofed initiation cannot tear down a live link; a link that only answers an incoming initiation (the engine's responder path) still connects |
+| `net.PeerLinkTest` (6) | **Full stack over loopback UDP**: real handshake, identity exchange, encrypted text delivery and transport acknowledgement; wrong invitation never connects; **both directions keep working across transport ACKs and idle heartbeats** (the interleaving that stalled the v1 stream and closed the link); a spoofed initiation cannot tear down a live link; a link that only answers an incoming initiation (the engine's responder path) still connects; **2 MiB of file-sized blocks arrive complete and in order** |
 | `net.dht.BencodeTest` (5) | Nested round trip with binary strings, canonical dictionary order, malformed input and trailing garbage rejected |
 | `net.rendezvous.StunClientTest` (2) | XOR-MAPPED-ADDRESS parsing from a real binding-success packet; a reply with a foreign transaction id is ignored |
 | `net.rendezvous.TrackerRendezvousTest` (1) | Real BEP 15 connect/announce byte layout against a local fake tracker: advertised port, `started` event, compact peer parsing, announce throttle |
@@ -45,7 +46,7 @@ suite.
 ### Build and artifact checks
 
 ```bash
-./gradlew :app:assembleDebug :app:assembleRelease
+./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleRelease
 apksigner verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk
 aapt2 dump badging app/build/outputs/apk/release/app-release.apk
 sha256sum app/build/outputs/apk/*/*.apk
@@ -53,6 +54,8 @@ sha256sum app/build/outputs/apk/*/*.apk
 
 Recorded results:
 
+- all 68 JVM tests pass, including a 2 MiB ordered file-block transfer over loopback UDP;
+- `:app:lintDebug` completes with no errors;
 - debug and release APKs build from a clean Gradle cache;
 - the release APK verifies with the local `twoperson` certificate (v2/v3 signature scheme);
 - package `dev.twoperson.messenger`, versionCode 1, versionName 1.0.0, minSdk 26, targetSdk 34;
@@ -62,8 +65,9 @@ Recorded results:
 
 No Android device or emulator is attached to this machine, so the following were **not**
 run: installation, first launch, invitation QR scanning, camera permission flow, on-device
-UI rendering, two-phone discovery, hole punching, reconnection after a network change, and
-battery/data measurements. They are the job of the matrix below.
+UI rendering, two-phone discovery, hole punching, reconnection after a network change,
+large-file transfer/resume, notification permission and channel behavior, and battery/data
+measurements. They are the job of the matrix and checks below.
 
 ## Two-phone test matrix (to be completed)
 
@@ -101,10 +105,51 @@ label the app displayed (*direct (internet)* / *direct (local network)*).
 9. Confirm the home screen shows *Unable to connect directly* when a direct path is
    deliberately blocked (e.g. block outbound UDP), and that no traffic is relayed anywhere.
 10. Check `adb logcat` during a session for absence of message text and secrets.
+11. Attach a small file in each direction; confirm progress, speed, completion, tap-to-open and
+    the long-press actions (open, share, save to `Downloads/Knot`, delete) work, and that the
+    receiver’s copy opens after a restart.
+12. Attach a zero-byte file; confirm it completes and opens (not an error).
+13. Send a large file (≥ 1 GB if available), then switch Wi-Fi/mobile data or toggle airplane
+    mode mid-transfer; confirm it resumes rather than restarting and that the final byte count
+    and content match the source (compare SHA-256).
+14. Clear the conversation during an active transfer; confirm both sides stop, no row remains,
+    and app storage does not keep the part file.
+15. Send text while a large file is streaming; confirm the message arrives promptly.
+16. Background the app and receive a message/file; confirm one alerting notification appears on
+    the high-importance channel and the ongoing service notification stays silent. Keep the
+    chat open and receive another; confirm no alert is posted while a Knot screen is visible.
+17. Deny notification permission on Android 13+; confirm the app still works, the Chats
+    notification card is visible and opens system settings, the permission is not requested on
+    launch, and the card disappears once notifications are enabled.
+18. Send several messages while scrolled up, then send one; confirm the list scrolls only for
+    the outgoing send. Tap the down-arrow to return to the newest row.
+19. Long-press a sent text message and copy it; confirm the clipboard contains exactly the
+    text. Long-press a failed message and retry after reconnecting; confirm it becomes
+    `Received by peer`. Delete a message and confirm it disappears and its app-private file is
+    gone.
+20. Choose a file from a provider that reports no size (for example a cloud document
+    provider); confirm the app makes a local copy and the transfer completes.
+21. Revoke a persisted URI grant or delete the original after sending; confirm the outgoing
+    message reports the file as unavailable instead of crashing.
+
+### File-transfer matrix (to be completed)
+
+| # | File size | Network | Interruption | Resume offset correct | Final hash matches | Notes |
+|---|---|---|---|---|---|---|
+| 1 | 0 B | Same Wi-Fi | None | | | |
+| 2 | 1 MB | Same Wi-Fi | None | | | |
+| 3 | 100 MB | Same Wi-Fi | Wi-Fi toggle | | | |
+| 4 | 1 GB | Different networks | Airplane mode 30 s | | | |
+| 5 | 100 MB | Mobile data | App backgrounded | | | |
+| 6 | Any | Any | Clear conversation mid-transfer | n/a | n/a | Both sides stop cleanly |
 
 ### Known constraints for the tester
 
 - Both apps must be running; the connection is held by the foreground service, so the screen
-  may be off. Force-stopping either app ends the link until it is opened again.
+  may be off. Force-stopping either app ends the link until it is opened again. A file
+  transfer pauses with the link and resumes after reconnection while the history is intact.
+- The receiver needs free space for the file plus an 8 MiB safety margin; the UI rejects the
+  offer cleanly when space is insufficient. Providers that cannot report a size also need
+  space for a temporary app-private copy on the sender.
 - Some carriers block UDP entirely; that case should end in *Unable to connect directly*,
   which is a correct result, not a bug.
