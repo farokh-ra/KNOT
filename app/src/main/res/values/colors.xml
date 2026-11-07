@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="brand_primary">#1F6FEB</color>
+    <color name="brand_on_primary">#FFFFFF</color>
+    <color name="bubble_out">#1F6FEB</color>
+    <color name="bubble_out_text">#FFFFFF</color>
+    <color name="bubble_in">#E7EDF7</color>
+    <color name="bubble_in_text">#101827</color>
+    <color name="status_ok">#1B8A5A</color>
+    <color name="status_warn">#B26A00</color>
+    <color name="status_error">#B3261E</color>
+    <color name="status_idle">#6B7280</color>
+    <color name="code_background">#F1F4FA</color>
+    <color name="launcher_background">#0B2A5B</color>
+</resources>

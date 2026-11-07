@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Adaptive icon background: midnight-navy to deep-teal gradient with a soft centred glow.
+     Full bleed 108dp; launchers mask it to their own shape. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <path android:pathData="M0,0h108v108h-108z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="4"
+                android:startY="0"
+                android:endX="104"
+                android:endY="108"
+                android:startColor="#FF0A1521"
+                android:centerColor="#FF0C2A33"
+                android:endColor="#FF0F4A44" />
+        </aapt:attr>
+    </path>
+
+    <path android:pathData="M54,54m-36,0a36,36 0 1,0 72,0a36,36 0 1,0 -72,0">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="radial"
+                android:centerX="54"
+                android:centerY="50"
+                android:gradientRadius="52"
+                android:startColor="#4022A08C"
+                android:endColor="#0022A08C" />
+        </aapt:attr>
+    </path>
+</vector>

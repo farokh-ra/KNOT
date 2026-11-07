@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bubble_out">#2D7BF4</color>
+    <color name="bubble_out_text">#FFFFFF</color>
+    <color name="bubble_in">#22303F</color>
+    <color name="bubble_in_text">#E7EDF7</color>
+    <color name="code_background">#1A2431</color>
+    <color name="status_ok">#4ADE94</color>
+    <color name="status_warn">#FFB948</color>
+    <color name="status_error">#FF8A80</color>
+    <color name="status_idle">#9AA4B2</color>
+</resources>

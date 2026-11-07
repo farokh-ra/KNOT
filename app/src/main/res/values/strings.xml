@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Knot</string>
+    <string name="app_tagline">Direct, end-to-end encrypted text between exactly two devices.</string>
+
+    <!-- Home -->
+    <string name="home_status_title">Connection</string>
+    <string name="home_partner_unknown">No paired device</string>
+    <string name="home_button_create">Create invitation</string>
+    <string name="home_button_join">Join invitation</string>
+    <string name="home_button_open_chat">Open chat</string>
+    <string name="home_button_clear">Clear conversation</string>
+    <string name="home_pairing_hint">Pair once: one person creates an invitation code, the other joins with it. Afterwards the app reconnects on its own.</string>
+    <string name="home_partner_section">Partner label (stored on this device only)</string>
+    <string name="home_partner_hint">e.g. Alex’s phone</string>
+    <string name="home_button_save_label">Save label</string>
+    <string name="home_privacy_note">Messages travel only over a direct, encrypted peer connection. Public DHT bootstrap nodes are used to help the two devices find each other; no server stores, forwards or reads chat content.</string>
+    <string name="home_direct_only_note">A direct connection cannot exist on every network (carrier-grade NAT, symmetric NAT, strict firewalls, some VPNs). There is no relay fallback, so the app reports failure instead of routing your messages through a third party.</string>
+    <string name="home_unpair">Forget partner</string>
+    <string name="home_unpair_confirm_title">Forget this partner?</string>
+    <string name="home_unpair_confirm_message">The invitation is deleted from this device and you will have to pair again. Your local message history is kept.</string>
+
+    <!-- Connection states -->    <string name="state_not_paired">Not paired</string>
+    <string name="state_discovering">Searching for the other device…</string>
+    <string name="state_connecting">Establishing a direct connection…</string>
+    <string name="state_connected_internet">Connected — direct over the internet</string>
+    <string name="state_connected_lan">Connected — direct on the local network</string>
+    <string name="state_disconnected">Disconnected — retrying</string>
+    <string name="state_unable">Unable to connect directly</string>
+    <string name="state_unable_detail">Direct connection unavailable on these networks. This is a network limitation, not a temporary glitch; the app will keep retrying but cannot use a relay.</string>
+    <string name="state_idle">Not started</string>
+
+    <!-- Pairing -->
+    <string name="pairing_title">Pair devices</string>
+    <string name="pairing_warning">The invitation code is a secret. Anyone who has it can try to connect to you, so share it only with the person you want to talk to, over a channel you trust.</string>
+    <string name="pairing_section_show">Your invitation code</string>
+    <string name="pairing_show_hint">Show this QR code to the other device, or copy the code and send it yourself.</string>
+    <string name="pairing_waiting">Waiting for the other device to connect…</string>
+    <string name="pairing_copy">Copy code</string>
+    <string name="pairing_copied">Code copied to the clipboard</string>
+    <string name="pairing_section_enter">Enter their invitation code</string>
+    <string name="pairing_code_hint">TPM1-XXXX-XXXX-…</string>
+    <string name="pairing_scan">Scan QR code</string>
+    <string name="pairing_join">Join</string>
+    <string name="pairing_invalid">That code is not valid. Check it and try again.</string>
+    <string name="pairing_button_done">Done</string>
+    <string name="pairing_camera_permission">Camera permission is needed to scan the QR code.</string>
+    <string name="pairing_scan_prompt">Point the camera at the other device’s QR code</string>
+    <string name="pairing_joined_note">Waiting for a direct connection. Keep both apps open on the same invitation.</string>
+    <string name="pairing_paired">Paired. You can start chatting.</string>
+
+    <!-- Chat -->
+    <string name="chat_title">Chat</string>
+    <string name="chat_input_hint">Message</string>
+    <string name="chat_send">Send</string>
+    <string name="chat_empty">No messages yet. Messages you send while offline stay queued on this device.</string>
+    <string name="chat_banner_reconnecting">Reconnecting directly — messages stay queued on this device</string>
+    <string name="chat_banner_unable">Direct connection unavailable on these networks</string>
+    <string name="chat_clear_confirm_title">Clear conversation?</string>
+    <string name="chat_clear_confirm_message">This deletes the message history stored on this device. It cannot be undone.</string>
+    <string name="chat_clear_confirm_ok">Clear</string>
+    <string name="chat_too_long">That message is too long.</string>
+    <string name="chat_not_paired">Pair with the other device first.</string>
+
+    <!-- Message states -->
+    <string name="message_state_pending">Queued</string>
+    <string name="message_state_sent">Sent to peer</string>
+    <string name="message_state_delivered">Received by peer</string>
+    <string name="message_state_failed">Not delivered</string>
+    <string name="message_meta_format">%1$s · %2$s</string>
+
+    <!-- Connection service notification -->
+    <string name="notif_channel_name">Direct connection</string>
+    <string name="notif_channel_desc">Keeps the direct, encrypted connection to your partner alive while the app is closed or the screen is off.</string>
+    <string name="notif_title">Knot</string>
+    <string name="notif_text_connected_lan">Connected — direct on the local network</string>
+    <string name="notif_text_connected_internet">Connected — direct over the internet</string>
+    <string name="notif_text_reconnecting">Reconnecting directly…</string>
+    <string name="notif_text_unable">Unable to connect directly — retrying</string>
+    <string name="notif_text_not_paired">Not paired</string>
+    <string name="notif_text_idle">Not started</string>
+
+    <string name="cancel">Cancel</string>
+    <string name="copied">Copied</string>
+    <string name="peer_changed">The other device presented a different identity, so the connection was rejected. Pair again if this was intentional.</string>
+    <string name="direct_badge">direct · encrypted</string>
+    <string name="channel_badge">channel</string>
+
+    <string name="clear_requires_pairing">Nothing to clear.</string>
+</resources>

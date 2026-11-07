@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Adaptive icon foreground: two interlocking rings, each passing over the other once.
+     Two rings, two devices, one direct link, nothing in between.
+     Every point stays within 31dp of the centre, inside the 66dp safe zone, so any launcher
+     mask (circle, squircle, teardrop) crops the background only. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <group
+        android:pivotX="54"
+        android:pivotY="54"
+        android:rotation="-12">
+
+        <!-- Back ring: a shadow pass first, so the front ring reads as passing over it. -->
+        <path
+            android:pathData="M56.96,41.43 A15.5,15.5 0 1 1 51.87,47.64"
+            android:strokeColor="#8C050B10"
+            android:strokeWidth="9"
+            android:strokeLineCap="round"
+            android:fillColor="@android:color/transparent" />
+        <!-- Back ring: mint. Open where the front ring crosses, so the weave is visible. -->
+        <path
+            android:pathData="M56.96,41.43 A15.5,15.5 0 1 1 51.87,47.64"
+            android:strokeColor="#FF4FD1B1"
+            android:strokeWidth="6"
+            android:strokeLineCap="round"
+            android:fillColor="@android:color/transparent" />
+
+        <!-- Front ring: shadow pass, then the near-white ribbon. -->
+        <path
+            android:pathData="M51.04,66.57 A15.5,15.5 0 1 1 56.13,60.36"
+            android:strokeColor="#8C050B10"
+            android:strokeWidth="9"
+            android:strokeLineCap="round"
+            android:fillColor="@android:color/transparent" />
+        <path
+            android:pathData="M51.04,66.57 A15.5,15.5 0 1 1 56.13,60.36"
+            android:strokeColor="#FFF2F8F6"
+            android:strokeWidth="6"
+            android:strokeLineCap="round"
+            android:fillColor="@android:color/transparent" />
+    </group>
+</vector>
