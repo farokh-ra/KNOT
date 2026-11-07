@@ -10,7 +10,7 @@ account system, no messaging backend, no cloud database, no relay and no analyti
 [![Android](https://img.shields.io/badge/Android-8.0%2B-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://developer.android.com)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.0.21-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white)](https://kotlinlang.org)
 [![Version](https://img.shields.io/badge/version-1.0.0-14B8A6?style=for-the-badge)](https://github.com/farokh-ra/KNOT)
-[![Tests](https://img.shields.io/badge/tests-48%20passing-22C55E?style=for-the-badge)](docs/TESTING.md)
+[![Tests](https://img.shields.io/badge/tests-62%20passing-22C55E?style=for-the-badge)](docs/TESTING.md)
 [![Backend](https://img.shields.io/badge/backend-none-0F172A?style=for-the-badge)](#privacy-by-design)
 [![Stars](https://img.shields.io/github/stars/farokh-ra/KNOT?style=for-the-badge&logo=github)](https://github.com/farokh-ra/KNOT/stargazers)
 
@@ -23,7 +23,7 @@ account system, no messaging backend, no cloud database, no relay and no analyti
 ---
 
 > **Project status — v1.0.0**
-> The app compiles and the 48-test JVM suite passes. The release signing path is documented
+> The app compiles and the 62-test JVM suite passes. The release signing path is documented
 > and produces a signed APK when the local keystore is present. No prebuilt release artifact
 > is published in this repository — build it locally with the included Gradle wrapper.
 > On-device installation, QR scanning and the two-phone network matrix still need to be
@@ -69,17 +69,21 @@ NAT, firewall or carrier-grade NAT. When a path does not exist, Knot reports
 | **Direct connection** | UDP hole punching | Peers authenticate and talk directly; no TURN, relay or message-forwarding path exists in the codebase. |
 | **End-to-end encryption** | X25519 + HKDF + AES-256-GCM | Fresh ephemeral keys per session, authenticated handshake, per-direction nonces and a replay window. |
 | **Reliable messaging** | Local outbox + ACKs | Messages are stored before sending, retried after reconnection and acknowledged only after the peer stores them. |
-| **Duplicate suppression** | Stable message IDs | A resent message is acknowledged again but never displayed twice. |
+| **Files of any size** | Streaming blocks + resume | Attach any file the system picker can open. Bytes stream in 16 KiB blocks over the same encrypted link, with live progress, automatic resume from the receiver’s durable acknowledged offset, and an end-to-end FNV-1a digest check before the file is published. |
+| **Duplicate suppression** | Stable message and transfer IDs | A resent message is acknowledged again but never displayed twice; a resumed file never repeats or skips a block. |
 | **Background link** | `dataSync` foreground service | The connection survives screen-off and app backgrounding, with an ongoing notification that mirrors the real state. |
-| **Local history** | SQLite in the app sandbox | History survives restarts. Clearing app data or uninstalling removes it permanently. |
+| **Message actions** | Long-press a bubble | Copy text, retry a failed send, delete a message, and open, share or save a completed file to `Downloads/Knot`. |
+| **Real message alerts** | Separate notification channels | A high-importance notification is posted only when a new message or completed file actually arrives while no Knot screen is visible. The mandatory service notification is silent and minimum-importance. |
+| **Local history** | SQLite in the app sandbox | History survives restarts. Clearing app data or uninstalling removes it permanently. Received files and outgoing cache copies stay private to the app. |
 | **Honest failures** | Explicit connection states | The UI shows discovering, connecting, connected, disconnected and unable-to-connect states. |
 | **No telemetry** | No analytics or crash SDK | No account, no tracking, no message content leaves the two devices except over the encrypted peer link. |
 
 ### What Knot deliberately does **not** do
 
-No group chats, file transfer, voice or video calls, cloud backup, push notifications, read
-receipts, typing indicators, contact discovery, accounts, phone-number login or message relay.
-Version 1 is intentionally one conversation between two devices.
+No group chats, voice or video calls, cloud backup, server push, read receipts, typing
+indicators, contact discovery, accounts, phone-number login or message relay. A file transfer
+still requires both devices to be online at the same time. Version 1 is intentionally one
+conversation between two devices.
 
 ## How it works
 
@@ -133,6 +137,35 @@ has stored the message, it returns an application-level `ACK` and the sender mar
 **Received by peer**. A message that cannot be delivered stays on the sender and is retried
 with the same ID on the next connection.
 
+### 5. File transfer
+
+Files use the same authenticated, encrypted reliable channel as text, so there is still no
+relay and no separate upload service:
+
+1. The sender stores the file reference (a persisted Storage Access Framework URI, or an
+   app-private copy when the provider cannot report a size) and inserts a visible file message.
+2. It announces a `FileOffer` with a stable transfer ID, exact byte count, sanitized file name
+   and MIME type.
+3. The receiver checks the size, free space and schema bounds, creates a `.part` file and
+   replies with a `FileAck` containing the number of bytes it durably holds. Zero bytes means a
+   fresh transfer; a non-zero offset resumes an interrupted one.
+4. The sender streams 16 KiB blocks with offsets, stays at most 8 MiB ahead of the receiver’s
+   durable acknowledgement (flow control), and yields to text messages so the chat remains
+   responsive.
+5. The receiver appends blocks in transport order, persists progress and a running FNV-1a
+   digest, and acknowledges at intervals. On `FileEnd`, it verifies the exact length and the
+   whole-file digest, moves the part file into app-private storage under a collision-free
+   name, marks the message delivered and posts a notification if no Knot screen is open. A
+   digest mismatch discards the part file and makes the sender retry from zero.
+6. On reconnect, both sides restart from the receiver’s acknowledged offset and adopt its
+   persisted prefix digest. A block that could not be queued is retained and retried, so a
+   full send window never loses bytes.
+
+The protocol caps a file at 4 TiB and an individual name at 255 UTF-8 bytes; the UI reports
+oversize files instead of creating a message. Clearing the conversation cancels active
+transfers and removes the app-private copies that belonged to the deleted messages; the
+original file chosen through the system picker is never touched.
+
 ## Architecture
 
 ```mermaid
@@ -161,13 +194,13 @@ flowchart LR
 
 | Layer | Responsibility |
 |---|---|
-| **UI** | Three Material 3 screens: Home, Pairing and Chat; QR generation and scanning. |
-| **Service** | A `dataSync` foreground service owns the engine lifetime so the link survives backgrounding. |
-| **Engine** | Connection state machine, discovery loop, outbox, acknowledgements, network-change handling and reconnect backoff. |
-| **Protocol** | Versioned binary schema with strict validation, chunking and bounded reassembly. |
-| **Transport** | One UDP socket, authenticated handshake, encrypted reliable frames and heartbeats. |
+| **UI** | Three Material 3 screens: Chats, Pairing and Chat; conversation and contact cards, date separators, file bubbles, unread badge and jump-to-latest. |
+| **Service** | A `dataSync` foreground service owns the engine lifetime so the link survives backgrounding; its notification is silent, and alerts use a separate message channel. |
+| **Engine** | Connection state machine, discovery loop, text outbox, file transfer manager, acknowledgements, network-change handling and reconnect backoff. |
+| **Protocol** | Versioned binary schema (v3) with strict validation, chunking, bounded reassembly and file offer/data/ack/end/done messages. |
+| **Transport** | One UDP socket, authenticated handshake, encrypted reliable frames, 4096-frame window and heartbeats. |
 | **Discovery** | BEP 15 UDP-tracker rendezvous, STUN public-endpoint lookup, minimal mainline-DHT client and a same-subnet LAN beacon. |
-| **Storage** | SQLite message history, pinned peer identity and Keystore-wrapped secrets. |
+| **Storage** | SQLite message and transfer state, app-private incoming files and outgoing cache copies, pinned peer identity and Keystore-wrapped secrets. |
 | **Crypto** | X25519, HKDF-SHA256, HMAC-SHA256 and AES-256-GCM. |
 
 The full design is documented in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), and the exact
@@ -189,6 +222,10 @@ invitation is exchanged out-of-band with the intended person.
 | **Identity pinning** | The peer's static X25519 identity is pinned after the first successful pairing; a changed identity is rejected |
 | **Secret storage** | The identity private key and invitation secret are wrapped with a non-exportable AES key held in the Android Keystore |
 | **Discovery privacy** | Only the HMAC-derived 20-byte topic is published to DHT nodes and trackers; STUN only reflects the socket's public endpoint. The invitation secret is never published |
+| **File confidentiality** | File blocks travel inside the same AES-256-GCM frames as text; the offer, name, MIME type, offsets and acknowledgements are authenticated application messages |
+| **File bounds** | A schema cap of 4 TiB, 16 KiB blocks, 255-byte UTF-8 names, 128-byte MIME types and sanitized paths prevent unbounded or traversal-style writes |
+| **File storage** | Received files land in app-private `filesDir/incoming`; outgoing copies use `filesDir/outgoing`. Sharing and opening use a `FileProvider` read grant |
+| **Notification privacy** | Message alerts use `VISIBILITY_PRIVATE` with a redacted public version; the ongoing service notification is silent and minimum-importance |
 | **Relay** | None. There is no relay, TURN or forwarding code path anywhere in the project |
 
 ### Honest gaps
@@ -199,10 +236,15 @@ invitation is exchanged out-of-band with the intended person.
 - Pairing is **trust-on-first-use**. If someone obtains the invitation before the intended
   person pairs, they can become the first peer. Invitations do not expire; replacing the
   invitation or using *Forget partner* is manual.
-- Message history is **not encrypted at rest**. It is plain SQLite inside the app sandbox;
-  the identity key and invitation secret are wrapped, but message text is not.
+- Message history **and received files are not encrypted at rest**. They sit in plain SQLite
+  and app-private storage inside the sandbox; the identity key and invitation secret are
+  wrapped, but message text and file bytes are not.
+- Outgoing files are referenced by a persisted Storage Access Framework URI. If the provider
+  revokes that grant, or the app is reinstalled, the message reports the file as unavailable;
+  providers that cannot report a size are copied into app storage first.
 - While the app is open, DHT nodes, UDP trackers, STUN servers and the other device learn your
-  public IP and UDP port. This is inherent to serverless rendezvous.
+  public IP and UDP port. This is inherent to serverless rendezvous. Notification content may
+  be visible on an unlocked device or to a granted notification listener.
 - A compromised device, rooted phone, screenshot malware or a malicious keyboard is outside
   the threat model.
 
@@ -258,7 +300,7 @@ sdk.dir=C\:\\Users\\you\\AppData\\Local\\Android\\Sdk
 ```powershell
 $env:JAVA_HOME = "C:\path\to\jdk-17-or-newer"
 
-.\gradlew.bat :app:testDebugUnitTest      # 48 JVM tests
+.\gradlew.bat :app:testDebugUnitTest      # 62 JVM tests
 .\gradlew.bat :app:assembleDebug          # debug APK
 .\gradlew.bat :app:assembleRelease        # signed release APK
 ```
@@ -351,10 +393,19 @@ build with no native libraries, so it runs on arm64, arm32 and x86 devices with 
 | **Received by peer** | The peer stored the message and returned an application-level ACK |
 | **Not delivered** | The link closed before delivery; the message is kept and retried on the next connection |
 
-The chat subtitle shows **`direct · encrypted`** while the channel is up.
+6. Tap the paperclip to attach one or more files. Each file appears as a bubble with its size
+   and live progress; tap a completed file to open it, or long-press to share it.
+7. The chat scrolls to the bottom after **you** send a message or file, not when an incoming
+   message arrives. If you are reading older messages, a down-arrow button jumps to the latest.
+8. Notifications are only posted for real incoming messages and completed files while no Knot
+   screen is visible. The first run asks for notification permission once; if it is denied, the
+   Chats screen offers a shortcut to system settings.
 
-Use **Clear conversation** to delete local history (the pairing survives), or **Forget
-partner** to remove the invitation and require a new pairing.
+The chat subtitle shows the direct connection type while the channel is up.
+
+Use **Clear conversation** to cancel active transfers and delete local history plus the
+app-private copies that belonged to it (the pairing survives), or **Forget partner** to remove
+the invitation and require a new pairing.
 
 ## Testing
 
@@ -362,7 +413,7 @@ partner** to remove the invitation and require a new pairing.
 ./gradlew :app:testDebugUnitTest
 ```
 
-The JVM suite contains **53 tests** across crypto, protocol, DHT encoding, STUN, BEP 15
+The JVM suite contains **68 tests** across crypto, protocol, files, DHT encoding, STUN, BEP 15
 trackers, secure channel, handshake and a full loopback-UDP peer link. The tests use real
 sockets and real crypto, not mocks.
 
@@ -371,16 +422,17 @@ sockets and real crypto, not mocks.
 | `crypto.X25519Test` | RFC 7748 vectors, low-order point rejection, key agreement |
 | `crypto.CryptoTest` | HKDF-SHA256 RFC 5869 vector, AES-GCM round trip, tamper rejection |
 | `crypto.InviteTest` | Invitation round trip, malformed codes, deterministic derived topic |
-| `protocol.AppCodecTest` | Schema round trips, UTF-8 and length validation, unknown types |
-| `protocol.ChunkingTest` | Out-of-order reassembly, duplicates, bounds and expiry |
+| `protocol.AppCodecTest` | Text and file schema round trips, UTF-8 and length validation, filename sanitization, unknown types |
+| `protocol.ChunkingTest` | Out-of-order reassembly, duplicates, maximum-size messages, bounds and expiry |
 | `net.SecureChannelTest` | Encrypted frames, replay detection, tampering and truncation |
 | `net.HandshakeTest` | Mirrored keys, wrong invitation, tampered MAC, idempotent retransmission |
-| `net.PeerLinkTest` | Full loopback UDP link, bidirectional traffic, heartbeats, spoof resistance, incoming-only responder |
+| `net.PeerLinkTest` | Full loopback UDP link, bidirectional traffic, heartbeats, spoof resistance, incoming-only responder, ordered 2 MiB file-block transfer |
 | `net.dht.BencodeTest` | Nested bencode round trip, canonical order, malformed input |
 | `net.rendezvous.StunClientTest` | XOR-MAPPED-ADDRESS parsing, forged-transaction rejection |
 | `net.rendezvous.TrackerRendezvousTest` | Real BEP 15 connect/announce format, compact peer parsing, announce throttle |
 
-The build and artifact checks are recorded in [`docs/TESTING.md`](docs/TESTING.md), along with
+`:app:lintDebug` also completes with no lint errors. The build and artifact checks are recorded
+in [`docs/TESTING.md`](docs/TESTING.md), along with
 the **two-phone test matrix** that still needs to be completed on physical hardware. No
 emulator or physical device was attached to the build machine, so installation, QR scanning
 and real-world NAT traversal remain to be verified by the user.
@@ -398,12 +450,13 @@ KNOT/
 │       │   │   ├── net/          UDP transport, handshake, secure channel, reliable link
 │       │   │   ├── net/dht/      Bencode and minimal mainline-DHT rendezvous client
 │       │   │   ├── net/rendezvous/  BEP 15 UDP trackers, STUN, shared-socket rendezvous
-│       │   │   ├── data/         SQLite history, pinned identity, Keystore-backed secrets
-│       │   │   ├── engine/       Connection state machine, discovery, outbox, ACKs
-│       │   │   ├── service/      Foreground service that holds the link open
-│       │   │   └── ui/           Home, Pairing and Chat screens
-│       │   └── res/              Material 3 layouts, theme, adaptive icon
-│       └── test/                 53 JVM tests (crypto, protocol, rendezvous, loopback link)
+│       │   │   ├── data/         SQLite history and transfers, pinned identity, Keystore-backed secrets
+│       │   │   ├── engine/       Connection state machine, discovery, text outbox, file streaming
+│       │   │   ├── service/      Foreground service and notification policy
+│       │   │   ├── util/         Activity visibility tracking
+│       │   │   └── ui/           Chats, Pairing and Chat screens
+│       │   └── res/              Material 3 layouts, theme, adaptive icon, FileProvider paths
+│       └── test/                 62 JVM tests (crypto, protocol, files, rendezvous, loopback link)
 ├── docs/                         Architecture, protocol, security, testing, build, install
 ├── gradle/                       Gradle wrapper
 ├── signing/                      Local signing material (git-ignored)
@@ -441,12 +494,24 @@ adding a relay:
   outbound UDP cannot discover peers; UDP trackers on ports 80/443 cover the common case where
   only the DHT's port 6881 is blocked.
 - **Both people must have the app running.** There is no push notification and no server to
-  hold messages. A message sent while the peer is offline stays queued on the sender.
+  hold messages or file bytes. A message or file sent while the peer is offline stays queued on
+  the sender.
+- **File transfers resume only against the same local history.** The receiver’s acknowledged
+  offset lives in SQLite; clearing the conversation (or app data) cancels the transfer and
+  removes the part file, so the next attempt starts from zero.
+- **Some providers cannot report a file size.** Those files are copied once into app storage
+  before sending, which requires enough free space for a second copy. Others expose a persisted
+  URI; if that grant is later revoked, the message reports the file as unavailable.
+- **The protocol caps a file at 4 TiB**, a name at 255 UTF-8 bytes and a MIME type at 128 bytes.
+  Larger files are rejected with a distinct message.
 - **Background delivery is best-effort.** A `dataSync` foreground service holds the link while
   the screen is off, but it cannot survive the device being powered off, the app being
   force-stopped, or long Doze/standby periods.
-- **History is local and not encrypted at rest.** Clearing app data or uninstalling deletes it
-  permanently. There is no backup, export or sync.
+- **Notifications are only real events.** A high-importance alert appears only for a new
+  incoming message or completed file while no Knot screen is visible. If notification permission
+  is denied, the app still works; the Chats screen links to system settings.
+- **History and received files are local and not encrypted at rest.** Clearing app data or
+  uninstalling deletes them permanently. There is no backup, export or sync.
 - **The handshake is not externally audited.**
 - **Metadata is visible to the network.** DHT nodes, UDP trackers, STUN servers and the peer
   see your public IP/port while the app is open.
@@ -462,6 +527,12 @@ The complete list is in [`LIMITATIONS.md`](LIMITATIONS.md).
 - Direct-only UDP transport with authenticated X25519 handshake and AES-256-GCM frames.
 - Public rendezvous: UDP trackers (BEP 15), STUN and DHT, plus a same-subnet LAN beacon.
 - Reliable outbox, application acknowledgements, duplicate suppression and reconnect backoff.
+- Arbitrary-size streaming file transfer over the same encrypted link, with progress, resume,
+  flow control and a 4 TiB protocol cap.
+- Message-only notifications on a separate high-importance channel; silent mandatory service
+  notification.
+- Redesigned Chats screen and chat: conversation and contact cards, file bubbles, date
+  separators, unread badge, send-only auto-scroll and jump-to-latest.
 - SQLite history, pinned peer identity and Keystore-wrapped secrets.
 - Release signing configuration for APK Signature Scheme v2 + v3.
 
@@ -479,13 +550,15 @@ no server that stores or forwards chat content**.
 ## Privacy by design
 
 - No analytics, no crash reporting, no accounts and no advertising SDK.
-- Message history and the pinned peer identity live in the app's private SQLite database.
+- Message history, transfer state and the pinned peer identity live in the app's private
+  SQLite database. Received files and provider-size fallback copies live in app-private storage.
 - The identity private key and invitation secret are wrapped with a non-exportable AES key
   from the Android Keystore.
 - DHT nodes and UDP trackers learn only a derived topic hash plus your IP/port while the app
   is open; STUN sees only the endpoint of the shared socket.
-- Chat content is sent only to the one authenticated peer endpoint.
-- Clearing app data or uninstalling destroys the local history and the wrapped secrets.
+- Chat and file content is sent only to the one authenticated peer endpoint.
+- Clearing app data or uninstalling destroys the local history, received files, cached outgoing
+  copies and the wrapped secrets.
 
 ## FAQ
 
@@ -500,9 +573,13 @@ No. Version 1 is exactly one private conversation between two paired devices.
 No. There is no store-and-forward server. The message stays queued on the sender and is
 delivered after the peer reconnects.
 
-**Are messages encrypted?**
-Yes, in transit: X25519 key agreement, HKDF-SHA256 key derivation and AES-256-GCM frames.
-Local history is not encrypted at rest.
+**Are messages and files encrypted?**
+Yes, in transit: X25519 key agreement, HKDF-SHA256 key derivation and AES-256-GCM frames carry
+both text and file blocks. Local history and received files are not encrypted at rest.
+
+**Can I send a large file?**
+Yes. Files stream in 16 KiB blocks with flow control and resume after reconnection. The protocol
+cap is 4 TiB; both devices must be online at the same time because there is no upload server.
 
 **Why does it say “Unable to connect directly”?**
 The two networks cannot establish a direct UDP path. Knot does not use a relay, so this is an

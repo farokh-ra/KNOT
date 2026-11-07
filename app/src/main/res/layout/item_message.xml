@@ -1,40 +1,114 @@
 <?xml version="1.0" encoding="utf-8"?>
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
+    android:orientation="vertical"
     android:paddingHorizontal="12dp"
     android:paddingVertical="3dp">
 
-    <com.google.android.material.card.MaterialCardView
-        android:id="@+id/bubbleCard"
+    <TextView
+        android:id="@+id/textDateHeader"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_gravity="start"
-        app:cardCornerRadius="16dp"
-        app:cardElevation="0dp">
+        android:layout_gravity="center_horizontal"
+        android:layout_marginTop="10dp"
+        android:layout_marginBottom="8dp"
+        android:background="@drawable/bg_date_chip"
+        android:paddingHorizontal="12dp"
+        android:paddingVertical="4dp"
+        android:textAppearance="?attr/textAppearanceLabelMedium"
+        android:textColor="?android:attr/textColorSecondary"
+        android:visibility="gone" />
 
-        <LinearLayout
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/bubbleCard"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:paddingHorizontal="12dp"
-            android:paddingVertical="8dp">
+            android:layout_gravity="start"
+            android:foreground="?attr/selectableItemBackground"
+            app:cardCornerRadius="18dp"
+            app:cardElevation="0dp">
 
-            <TextView
-                android:id="@+id/textBody"
+            <LinearLayout
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:maxWidth="280dp"
-                android:textAppearance="?attr/textAppearanceBodyLarge"
-                android:textIsSelectable="true" />
+                android:orientation="vertical"
+                android:paddingHorizontal="12dp"
+                android:paddingVertical="8dp">
 
-            <TextView
-                android:id="@+id/textMeta"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="3dp"
-                android:textAppearance="?attr/textAppearanceLabelSmall" />
-        </LinearLayout>
-    </com.google.android.material.card.MaterialCardView>
-</FrameLayout>
+                <TextView
+                    android:id="@+id/textBody"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:maxWidth="280dp"
+                    android:textAppearance="?attr/textAppearanceBodyLarge"
+                    android:textIsSelectable="true"
+                    android:visibility="gone" />
+
+                <LinearLayout
+                    android:id="@+id/fileRow"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:visibility="gone">
+
+                    <ImageView
+                        android:id="@+id/imageFileIcon"
+                        android:layout_width="34dp"
+                        android:layout_height="34dp"
+                        android:contentDescription="@null"
+                        android:src="@drawable/ic_file" />
+
+                    <LinearLayout
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="10dp"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:id="@+id/textFileName"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:ellipsize="middle"
+                            android:maxWidth="220dp"
+                            android:maxLines="2"
+                            android:textAppearance="?attr/textAppearanceBodyMedium"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/textFileInfo"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="1dp"
+                            android:maxWidth="220dp"
+                            android:textAppearance="?attr/textAppearanceLabelSmall" />
+
+                        <ProgressBar
+                            android:id="@+id/progressFile"
+                            style="?android:attr/progressBarStyleHorizontal"
+                            android:layout_width="220dp"
+                            android:layout_height="4dp"
+                            android:layout_marginTop="6dp"
+                            android:indeterminate="false"
+                            android:max="100"
+                            android:progress="0"
+                            android:visibility="gone" />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/textMeta"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="3dp"
+                    android:textAppearance="?attr/textAppearanceLabelSmall" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+    </FrameLayout>
+</LinearLayout>

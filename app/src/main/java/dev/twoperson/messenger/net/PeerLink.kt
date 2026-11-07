@@ -103,6 +103,11 @@ class PeerLink(
 
     val remoteAddress: InetSocketAddress get() = remote
 
+    /** Frames the reliable send window can accept right now. Used by bulk file transfer. */
+    fun freeSendSlots(): Int = synchronized(lock) {
+        if (phase != Phase.READY) 0 else (MAX_OUTSTANDING - outstanding.size).coerceAtLeast(0)
+    }
+
     suspend fun awaitReady(timeoutMs: Long): ByteArray? = withTimeoutOrNull(timeoutMs) {
         try {
             readySignal.await()
@@ -270,14 +275,22 @@ class PeerLink(
     }
 
     private fun handleAckLocked(payload: ByteArray) {
-        if (payload.size < 12) return
-        val buffer = ByteBuffer.wrap(payload)
-        val cumulative = buffer.long
-        val bits = buffer.int
+        if (payload.size <= ACK_BASE_BYTES) return
+        val cumulative = ByteBuffer.wrap(payload).long
+        val bitmapBytes = payload.size - ACK_BASE_BYTES
         for (sequence in outstanding.keys.toList()) {
-            val acked = sequence <= cumulative ||
-                (sequence > cumulative && sequence <= cumulative + 32 &&
-                    (bits shr (sequence - cumulative - 1).toInt() and 1) == 1)
+            val acked = if (sequence <= cumulative) {
+                true
+            } else {
+                val offset = sequence - cumulative - 1
+                if (offset >= bitmapBytes * 8L) {
+                    false
+                } else {
+                    val bit = payload[ACK_BASE_BYTES + (offset / 8).toInt()].toInt() shr
+                        ((offset % 8).toInt()) and 1
+                    bit == 1
+                }
+            }
             if (!acked) continue
             val frame = outstanding.remove(sequence) ?: continue
             completeDeliveryLocked(frame.delivery)
@@ -352,11 +365,17 @@ class PeerLink(
     private fun sendAckLocked() {
         val active = channel ?: return
         val cumulative = receiveDataSeq - 1
-        var bits = 0
-        for (offset in 1..32) {
-            if (outOfOrder.containsKey(cumulative + offset)) bits = bits or (1 shl (offset - 1))
+        // Selective acknowledgement covers the whole send window. With only 32 bits, any
+        // frame buffered beyond cumulative+32 looked unacknowledged and was retransmitted
+        // again and again, flooding the path as soon as one datagram was lost.
+        val bitmap = ByteArray(MAX_OUTSTANDING / 8)
+        for (sequence in outOfOrder.keys) {
+            val offset = sequence - cumulative - 1
+            if (offset < 0 || offset >= MAX_OUTSTANDING) continue
+            val index = offset.toInt()
+            bitmap[index / 8] = (bitmap[index / 8].toInt() or (1 shl (index % 8))).toByte()
         }
-        val payload = ByteBuffer.allocate(12).putLong(cumulative).putInt(bits).array()
+        val payload = ByteBuffer.allocate(ACK_BASE_BYTES + bitmap.size).putLong(cumulative).put(bitmap).array()
         sendRawLocked(active.seal(Wire.KIND_ACK, payload))
         ackDirty = false
         lastAckAt = System.currentTimeMillis()
@@ -392,7 +411,11 @@ class PeerLink(
     }
 
     companion object {
-        private const val TICK_MS = 150L
+        /**
+         * Fast enough to drain a full send window quickly, cheap enough that an idle link
+         * still sleeps most of the time.
+         */
+        private const val TICK_MS = 50L
         private const val HANDSHAKE_TIMEOUT_MS = 25_000L
         private const val HANDSHAKE_RETRY_MS = 400L
 
@@ -400,15 +423,24 @@ class PeerLink(
         private const val PEER_TIMEOUT_MS = 30_000L
         private const val HEARTBEAT_MS = 3_000L
 
-        private const val BASE_RETRANSMIT_MS = 400L
-        private const val MAX_RETRANSMIT_MS = 5_000L
+        private const val BASE_RETRANSMIT_MS = 300L
+        private const val MAX_RETRANSMIT_MS = 4_000L
         private const val MAX_BACKOFF_SHIFT = 4
-        private const val ACK_INTERVAL_MS = 40L
+        private const val ACK_INTERVAL_MS = 15L
 
-        /** ~56s of a completely stalled path before an undelivered message is reported failed. */
-        private const val MAX_ATTEMPTS = 14
-        private const val MAX_OUTSTANDING = 96
-        private const val MAX_REORDER = 96
+        /** ~60s of a completely stalled path before an undelivered message is reported failed. */
+        private const val MAX_ATTEMPTS = 16
+
+        /**
+         * ~4.4 MB of data can be in flight. A wider window keeps a fast link busy even when
+         * the round-trip time is high, which is what turns a chat-sized window into
+         * file-transfer throughput; the encrypted payloads are still small datagrams.
+         */
+        private const val MAX_OUTSTANDING = 4096
+        private const val MAX_REORDER = 4096
+
+        /** Cumulative sequence plus the selective-acknowledgement bitmap. */
+        private const val ACK_BASE_BYTES = 8
         private const val CONTROL_HEARTBEAT = 1.toByte()
     }
 }

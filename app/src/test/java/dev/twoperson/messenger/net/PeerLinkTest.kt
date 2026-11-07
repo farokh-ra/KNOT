@@ -4,6 +4,7 @@ import dev.twoperson.messenger.crypto.Crypto
 import dev.twoperson.messenger.crypto.Invite
 import dev.twoperson.messenger.crypto.X25519
 import dev.twoperson.messenger.protocol.AppMessage
+import dev.twoperson.messenger.protocol.Protocol
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -405,6 +406,126 @@ class PeerLinkTest {
             scope.cancel()
         }
     }
+
+    /**
+     * Bulk path stress: 2 MiB of file blocks cross the real encrypted reliable link. The
+     * receiver verifies every offset and byte, so a lost, duplicated or reordered block fails
+     * the test instead of silently producing a corrupt file.
+     */
+    @Test
+    fun multiMegabyteFileBlocksArriveInOrderAndIntact() = runBlocking {
+        val loopback = InetAddress.getByName("127.0.0.1")
+        val socketA = DatagramSocket(0, loopback)
+        val socketB = DatagramSocket(0, loopback)
+        // Match UdpTransport: the OS default receive buffer is far smaller than one send
+        // window, so a burst would otherwise overflow before the reader thread drains it.
+        socketA.sendBufferSize = 4 * 1024 * 1024
+        socketA.receiveBufferSize = 4 * 1024 * 1024
+        socketB.sendBufferSize = 4 * 1024 * 1024
+        socketB.receiveBufferSize = 4 * 1024 * 1024
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val authKey = Invite.authKey(Invite.newSecret())
+        val privateA = X25519.generatePrivateKey()
+        val privateB = X25519.generatePrivateKey()
+        val transferId = Crypto.randomBytes(Protocol.TRANSFER_ID_BYTES)
+        val totalBytes = 2L * 1024 * 1024
+        val completed = CompletableDeferred<Long>()
+
+        var expectedOffset = 0L
+        var closedA: String? = null
+        var closedB: String? = null
+
+        lateinit var linkA: PeerLink
+        lateinit var linkB: PeerLink
+
+        linkA = PeerLink(
+            socketA,
+            InetSocketAddress(loopback, socketB.localPort),
+            Handshake(authKey, privateA, X25519.publicKey(privateA)),
+            scope,
+            object : PeerLink.Listener {
+                override fun onHandshakeComplete(peerIdentityPublicKey: ByteArray) = Unit
+                override fun onApplicationMessage(message: AppMessage) = Unit
+                override fun onClosed(reason: String) {
+                    closedA = reason
+                }
+            }
+        )
+        linkB = PeerLink(
+            socketB,
+            InetSocketAddress(loopback, socketA.localPort),
+            Handshake(authKey, privateB, X25519.publicKey(privateB)),
+            scope,
+            object : PeerLink.Listener {
+                override fun onHandshakeComplete(peerIdentityPublicKey: ByteArray) = Unit
+
+                override fun onApplicationMessage(message: AppMessage) {
+                    if (message !is AppMessage.FileData) return
+                    if (!message.transferId.contentEquals(transferId)) return
+                    if (message.offset != expectedOffset) {
+                        completed.completeExceptionally(
+                            AssertionError(
+                                "expected offset $expectedOffset, got ${message.offset}"
+                            )
+                        )
+                        return
+                    }
+                    for (index in message.data.indices) {
+                        val expected = pattern(expectedOffset + index)
+                        if (message.data[index] != expected) {
+                            completed.completeExceptionally(
+                                AssertionError("byte mismatch at ${expectedOffset + index}")
+                            )
+                            return
+                        }
+                    }
+                    expectedOffset += message.data.size
+                    if (expectedOffset == totalBytes) completed.complete(expectedOffset)
+                }
+
+                override fun onClosed(reason: String) {
+                    closedB = reason
+                }
+            }
+        )
+
+        val pumpA = scope.launch(Dispatchers.IO) { pump(socketA, linkA) }
+        val pumpB = scope.launch(Dispatchers.IO) { pump(socketB, linkB) }
+
+        try {
+            assertNotNull(linkA.awaitReady(10_000))
+            assertNotNull(linkB.awaitReady(10_000))
+
+            var offset = 0L
+            while (offset < totalBytes && linkA.isReady) {
+                val size = minOf(
+                    Protocol.MAX_FILE_DATA_BYTES.toLong(),
+                    totalBytes - offset
+                ).toInt()
+                val block = ByteArray(size) { index -> pattern(offset + index) }
+                val data = AppMessage.FileData(transferId, offset, block)
+                if (linkA.sendApplicationMessage(data)) {
+                    offset += size
+                } else {
+                    delay(2)
+                }
+            }
+
+            assertEquals(totalBytes, withTimeout(120_000) { completed.await() })
+            assertEquals(null, closedA)
+            assertEquals(null, closedB)
+        } finally {
+            linkA.close("test_done")
+            linkB.close("test_done")
+            pumpA.cancel()
+            pumpB.cancel()
+            socketA.close()
+            socketB.close()
+            scope.cancel()
+        }
+    }
+
+    private fun pattern(index: Long): Byte = (index % 251).toByte()
 
     private fun pump(socket: DatagramSocket, link: PeerLink) {
         val buffer = ByteArray(2048)

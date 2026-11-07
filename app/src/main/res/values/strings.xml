@@ -1,26 +1,46 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Knot</string>
-    <string name="app_tagline">Direct, end-to-end encrypted text between exactly two devices.</string>
+    <string name="app_tagline">Direct, end-to-end encrypted messages and files between exactly two devices.</string>
 
     <!-- Home -->
+    <string name="home_chats_title">Chats</string>
     <string name="home_status_title">Connection</string>
     <string name="home_partner_unknown">No paired device</string>
+    <string name="home_partner_connecting">Waiting for the other device</string>
+    <string name="home_conversation_new">No messages yet</string>
+    <string name="home_conversation_empty_hint">Tap to open your private chat.</string>
+    <string name="home_preview_you">You: %1$s</string>
     <string name="home_button_create">Create invitation</string>
     <string name="home_button_join">Join invitation</string>
     <string name="home_button_open_chat">Open chat</string>
     <string name="home_button_clear">Clear conversation</string>
     <string name="home_pairing_hint">Pair once: one person creates an invitation code, the other joins with it. Afterwards the app reconnects on its own.</string>
-    <string name="home_partner_section">Partner label (stored on this device only)</string>
+    <string name="home_partner_section">Contact</string>
+    <string name="home_partner_label_section">Name shown on this device only</string>
     <string name="home_partner_hint">e.g. Alex’s phone</string>
-    <string name="home_button_save_label">Save label</string>
-    <string name="home_privacy_note">Messages travel only over a direct, encrypted peer connection. Public DHT nodes, UDP trackers and STUN servers are used to help the two devices find each other; no server stores, forwards or reads chat content.</string>
+    <string name="home_button_save_label">Save name</string>
+    <string name="home_label_saved">Name saved</string>
+    <string name="home_privacy_note">Messages and files travel only over a direct, encrypted peer connection. Public DHT nodes, UDP trackers and STUN servers help the two devices find each other; no server stores, forwards or reads chat content.</string>
     <string name="home_direct_only_note">A direct connection cannot exist on every network (carrier-grade NAT, symmetric NAT, strict firewalls, some VPNs). There is no relay fallback, so the app reports failure instead of routing your messages through a third party.</string>
     <string name="home_unpair">Forget partner</string>
     <string name="home_unpair_confirm_title">Forget this partner?</string>
     <string name="home_unpair_confirm_message">The invitation is deleted from this device and you will have to pair again. Your local message history is kept.</string>
+    <string name="home_notifications_title">Message notifications</string>
+    <string name="home_notifications_body">Only real incoming messages show a notification. Connection state stays silent.</string>
+    <string name="home_notifications_enable">Enable notifications</string>
+    <string name="home_notifications_settings">Open system settings</string>
+    <string name="home_notifications_on">Notifications are on</string>
+    <string name="home_notifications_off">Notifications are blocked in system settings</string>
+    <string name="home_contact_device">Paired device</string>
+    <string name="home_unknown_device">Unknown device</string>
+    <string name="home_paired_on">Paired %1$s</string>
+    <string name="home_file_preview">File · %1$s</string>
+    <string name="home_avatar_placeholder">K</string>
+    <string name="home_notifications_icon">Notifications</string>
 
-    <!-- Connection states -->    <string name="state_not_paired">Not paired</string>
+    <!-- Connection states -->
+    <string name="state_not_paired">Not paired</string>
     <string name="state_discovering">Searching for the other device…</string>
     <string name="state_connecting">Establishing a direct connection…</string>
     <string name="state_connected_internet">Connected — direct over the internet</string>
@@ -53,14 +73,43 @@
     <string name="chat_title">Chat</string>
     <string name="chat_input_hint">Message</string>
     <string name="chat_send">Send</string>
+    <string name="chat_attach">Attach a file</string>
+    <string name="chat_attach_failed">Could not read that file.</string>
+    <string name="chat_attach_too_large">That file is larger than the 4 TB limit.</string>
+    <plurals name="chat_attach_started">
+        <item quantity="one">%1$d file queued</item>
+        <item quantity="other">%1$d files queued</item>
+    </plurals>
     <string name="chat_empty">No messages yet. Messages you send while offline stay queued on this device.</string>
-    <string name="chat_banner_reconnecting">Reconnecting directly — messages stay queued on this device</string>
+    <string name="chat_banner_reconnecting">Reconnecting directly — messages and files stay queued on this device</string>
     <string name="chat_banner_unable">Direct connection unavailable on these networks</string>
     <string name="chat_clear_confirm_title">Clear conversation?</string>
     <string name="chat_clear_confirm_message">This deletes the message history stored on this device. It cannot be undone.</string>
     <string name="chat_clear_confirm_ok">Clear</string>
     <string name="chat_too_long">That message is too long.</string>
     <string name="chat_not_paired">Pair with the other device first.</string>
+    <string name="chat_jump_latest">Jump to latest message</string>
+    <string name="chat_menu_clear">Clear conversation</string>
+    <string name="chat_file_open">Open file</string>
+    <string name="chat_file_open_failed">No app can open this file.</string>
+    <string name="chat_file_not_ready">This file is still transferring.</string>
+    <string name="chat_file_unavailable">The file is no longer available on this device.</string>
+    <string name="chat_file_share">Share file</string>
+    <string name="chat_file_saved">Saved to Downloads/Knot</string>
+    <string name="chat_file_save_failed">Could not save the file.</string>
+    <string name="chat_file_save_permission">Storage permission is needed to save files.</string>
+    <string name="chat_message_actions">Message actions</string>
+    <string name="chat_action_copy">Copy text</string>
+    <string name="chat_action_retry">Retry sending</string>
+    <string name="chat_action_delete">Delete</string>
+    <string name="chat_action_open">Open</string>
+    <string name="chat_action_save">Save to Downloads</string>
+    <string name="chat_action_share">Share</string>
+    <string name="chat_delete_confirm_title">Delete this message?</string>
+    <string name="chat_delete_confirm_message">It will be removed from this device. A file that has not arrived yet is cancelled.</string>
+    <string name="chat_delete_confirm_ok">Delete</string>
+    <string name="chat_retry_started">Retrying…</string>
+    <string name="chat_retry_failed">This message cannot be retried.</string>
 
     <!-- Message states -->
     <string name="message_state_pending">Queued</string>
@@ -68,10 +117,21 @@
     <string name="message_state_delivered">Received by peer</string>
     <string name="message_state_failed">Not delivered</string>
     <string name="message_meta_format">%1$s · %2$s</string>
+    <string name="message_date_today">Today</string>
+    <string name="message_date_yesterday">Yesterday</string>
+
+    <!-- Files -->
+    <string name="file_state_sending">Sending… %1$d%%</string>
+    <string name="file_state_receiving">Receiving… %1$d%%</string>
+    <string name="file_state_waiting">Waiting for connection</string>
+    <string name="file_state_failed">Transfer failed</string>
+    <string name="file_state_ready">Tap to open</string>
+    <string name="file_size_and_state">%1$s · %2$s</string>
+    <string name="file_info_with_speed">%1$s · %2$s/s</string>
 
     <!-- Connection service notification -->
     <string name="notif_channel_name">Direct connection</string>
-    <string name="notif_channel_desc">Keeps the direct, encrypted connection to your partner alive while the app is closed or the screen is off.</string>
+    <string name="notif_channel_desc">Keeps the direct, encrypted connection alive while the app is in the background. This channel is silent and minimized.</string>
     <string name="notif_title">Knot</string>
     <string name="notif_text_connected_lan">Connected — direct on the local network</string>
     <string name="notif_text_connected_internet">Connected — direct over the internet</string>
@@ -79,6 +139,14 @@
     <string name="notif_text_unable">Unable to connect directly — retrying</string>
     <string name="notif_text_not_paired">Not paired</string>
     <string name="notif_text_idle">Not started</string>
+
+    <!-- Message notifications -->
+    <string name="notif_messages_channel_name">Messages</string>
+    <string name="notif_messages_channel_desc">Shows a notification only when a new message or file actually arrives while the app is in the background.</string>
+    <string name="notif_new_message">New message</string>
+    <string name="notif_new_file">Sent a file: %1$s</string>
+    <string name="notif_private_preview">New message from your partner</string>
+    <string name="notif_unread_count">%1$d unread</string>
 
     <string name="cancel">Cancel</string>
     <string name="copied">Copied</string>

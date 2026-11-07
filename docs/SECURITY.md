@@ -2,8 +2,8 @@
 
 ## Threat model
 
-Two devices that already share an invitation secret want to talk without any server reading
-or storing the conversation. The app assumes:
+Two devices that already share an invitation secret want to exchange messages and files
+without any server reading or storing them. The app assumes:
 
 - the invitation code is exchanged out of band and only with the intended person;
 - the network is hostile (packets can be observed, injected, replayed, dropped);
@@ -13,14 +13,27 @@ or storing the conversation. The app assumes:
 
 ## What the design provides
 
-- **Confidentiality and integrity of chat traffic**: AES-256-GCM frames over a direct path,
-  keys derived from an ephemeral X25519 agreement, per-direction counters as nonces.
+- **Confidentiality and integrity of chat and file traffic**: AES-256-GCM frames over a direct
+  path, keys derived from an ephemeral X25519 agreement, per-direction counters as nonces.
+  File offers, blocks, offsets and acknowledgements are inside the same authenticated channel.
 - **Forward secrecy per session**: the handshake uses fresh ephemeral keys each time; the
   long-term identity key only signs its way into the transcript, never encrypts messages.
 - **Proof of invitation possession**: the initiation MAC is keyed by the invitation secret;
   an unrelated device that guesses the topic cannot complete a handshake.
-- **No relay**: there is no code path that forwards chat through a third party. When a direct
-  path fails, the UI says so.
+- **No relay**: there is no code path that forwards chat or file bytes through a third party.
+  When a direct path fails, the UI says so and transfer pauses.
+- **Bounded file handling**: a 4 TiB protocol cap, 16 KiB blocks, a 64 KiB application-message
+  cap, 255-byte UTF-8 names after sanitization, 128-byte MIME types, an 8 MiB flow-control
+  window and a free-space check before a part file is created. Names are stripped of control
+  characters and path separators, and destinations are built inside app-private directories,
+  so a peer cannot choose an arbitrary path. Offsets must be sequential and blocks must not
+  overlap the acknowledged prefix.
+- **App-private file storage**: received files live in `filesDir/incoming`; cached outgoing
+  copies live in `filesDir/outgoing`; part files live in `filesDir/transfers`. Opening or
+  sharing uses a `FileProvider` read grant, not a file path.
+- **Privacy-aware notifications**: real message alerts use `VISIBILITY_PRIVATE` with a
+  redacted public version; the mandatory foreground-service notification is on a silent,
+  minimum-importance channel and never carries message text.
 - **Minimal disclosure to rendezvous services**: DHT nodes and UDP trackers learn only a
   derived 20-byte topic plus the observed IP/port; STUN servers only reflect the socket's
   public endpoint. The invitation secret is never sent to any of them.
@@ -34,8 +47,17 @@ or storing the conversation. The app assumes:
   identity is pinned afterwards. If someone obtains the invitation before the intended person
   pairs, they can be the first peer.
 - Invitations do not expire. Replacing the invitation or using *Forget partner* is manual.
-- Message history is **not** encrypted at rest. It is plain SQLite inside the app sandbox; the
-  identity key and invitation secret are wrapped, but message text is not.
+- Message history, transfer state, received files and cached outgoing copies are **not**
+  encrypted at rest. They sit in plain SQLite and app-private storage inside the sandbox; the
+  identity key and invitation secret are wrapped, but message text and file bytes are not.
+- Received files are not malware-scanned. Opening a file is the user’s decision and depends on
+  the viewer app; the transport guarantees integrity, not safety of the content.
+- Outgoing files can remain referenced by a persisted SAF URI. If the provider revokes the
+  grant or the app is reinstalled, the message reports the file as unavailable. Providers that
+  cannot report a size are copied into app storage first; that copy is protected only by the
+  app sandbox and is deleted when the conversation is cleared.
+- A notification listener or someone using an unlocked device may see sender names and message
+  previews; the public lockscreen version is redacted but the private version is not.
 - No protection against a compromised device, screenshot malware, or a rooted phone.
 - Metadata: while the app is open, DHT nodes, UDP trackers, STUN servers and the other device
   learn your public IP and UDP port. That is inherent to serverless rendezvous.
@@ -52,9 +74,18 @@ or storing the conversation. The app assumes:
 | Encrypted channel retained and verified | Done — AES-256-GCM, replay window, tamper tests |
 | No relay / TURN / message-forwarding fallback | Done — none exists in the code base |
 | Rendezvous services receive no message text | Done — DHT carries KRPC only; trackers see the topic hash and endpoint; STUN sees a binding request |
-| Message parser validates type, length, encoding | Done — `AppCodecTest` |
+| Message parser validates type, length, encoding | Done — `AppCodecTest` covers text and file schemas |
 | Duplicate messages ignored | Done — chunk reassembly plus `messages.id` primary key |
 | ACK sent only after local persistence | Done — repository insert precedes the ACK send |
+| File size, block length, offset and MIME bounded | Done — decoder rejects out-of-range values; UI rejects known-oversize files |
+| File names cannot escape the destination directory | Done — control characters, `/`, `\` and dot-only names sanitized; destination built in `filesDir/incoming` |
+| Received file acknowledged only after durable completion | Done — part file flushed, exact length and FNV-1a digest verified, then moved before `FileDone(success)` |
+| Resume trusts bytes actually on disk | Done — part file length is re-read after I/O errors and its prefix digest is re-computed if the persisted value is unavailable |
+| File data cannot starve chat | Done — text outbox checked every 250 ms; file sender pauses while text waits |
+| File bytes stay on the authenticated peer path | Done — no relay or upload endpoint exists; all blocks use `PeerLink` |
+| Clearing history removes app-private file copies | Done — active sessions cancelled, part files deleted, row paths removed; SAF originals untouched |
+| Notifications only for real incoming content | Done — `AppVisibility` gate; service channel is silent and separate |
+| Notification permission handled without crashing | Done — requested only from the explicit enable button, never on launch; checks before every post; `SecurityException` caught |
 | Private keys never in logs or plain preferences | Done — Keystore-wrapped; no secret is logged |
 | No message content to analytics or crash reporting | Done — no analytics or crash SDK is included |
 | Network failure does not delete unsent messages | Done — queued/failed rows persist and are retried |

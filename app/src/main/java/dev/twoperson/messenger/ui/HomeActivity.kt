@@ -1,10 +1,13 @@
 package dev.twoperson.messenger.ui
 
+import android.Manifest
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
-import android.view.View
+import android.provider.Settings
+import android.text.format.DateFormat
 import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.view.isVisible
@@ -14,6 +17,9 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import dev.twoperson.messenger.App
 import dev.twoperson.messenger.R
+import dev.twoperson.messenger.data.Message
+import dev.twoperson.messenger.data.MessageDirection
+import dev.twoperson.messenger.data.MessageKind
 import dev.twoperson.messenger.data.PeerInfo
 import dev.twoperson.messenger.databinding.ActivityHomeBinding
 import dev.twoperson.messenger.engine.ConnectionState
@@ -21,34 +27,65 @@ import dev.twoperson.messenger.engine.ConnectionStatus
 import dev.twoperson.messenger.engine.DirectKind
 import dev.twoperson.messenger.engine.EngineEvent
 import dev.twoperson.messenger.service.ConnectionService
+import dev.twoperson.messenger.service.MessageNotifications
+import dev.twoperson.messenger.util.AppVisibility
 import kotlinx.coroutines.launch
+import java.util.Date
 
 class HomeActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityHomeBinding
     private val container get() = (application as App).container
 
+    private var configured = false
+    private var peer: PeerInfo? = null
+    private var messages: List<Message> = emptyList()
+    private var unread = 0
+    private var latestStatus = ConnectionStatus()
+
+    private val notificationPermission =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) {
+            renderNotificationCard()
+        }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityHomeBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
+        binding.cardConversation.setOnClickListener {
+            if (container.engine.isConfigured()) {
+                startActivity(Intent(this, ChatActivity::class.java))
+            } else {
+                openPairing(PairingActivity.MODE_CREATE)
+            }
+        }
         binding.buttonCreate.setOnClickListener { openPairing(PairingActivity.MODE_CREATE) }
         binding.buttonJoin.setOnClickListener { openPairing(PairingActivity.MODE_JOIN) }
-        binding.buttonOpenChat.setOnClickListener {
-            startActivity(android.content.Intent(this, ChatActivity::class.java))
-        }
         binding.buttonSaveLabel.setOnClickListener { saveLabel() }
         binding.buttonClear.setOnClickListener { confirmClear() }
         binding.buttonUnpair.setOnClickListener { confirmUnpair() }
+        binding.buttonNotifications.setOnClickListener { requestNotifications() }
 
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                launch { container.engine.status.collect { renderStatus(it) } }
+                launch {
+                    container.engine.status.collect { status ->
+                        latestStatus = status
+                        renderStatus(status)
+                    }
+                }
                 launch { container.engine.events.collect { handleEvent(it) } }
                 launch {
-                    container.repository.messages.collect { messages ->
-                        binding.buttonClear.isVisible = messages.isNotEmpty()
+                    container.repository.messages.collect { list ->
+                        messages = list
+                        updateConversationCard()
+                    }
+                }
+                launch {
+                    container.repository.unreadCount.collect { count ->
+                        unread = count
+                        updateUnreadBadge()
                     }
                 }
             }
@@ -57,52 +94,129 @@ class HomeActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
-        // Keep the direct connection owned by the foreground service so backgrounding the
-        // app or turning the screen off does not drop the link.
+        AppVisibility.onActivityStarted()
         if (container.engine.isConfigured()) {
             ConnectionService.ensureRunning(this)
-            requestNotificationPermission()
         }
+        renderNotificationCard()
+    }
+
+    override fun onStop() {
+        AppVisibility.onActivityStopped()
+        super.onStop()
     }
 
     override fun onResume() {
         super.onResume()
+        MessageNotifications.dismissIncoming(this)
         lifecycleScope.launch {
             container.repository.refresh()
+            configured = container.engine.isConfigured()
             refreshPeerUi()
         }
+        renderNotificationCard()
     }
 
     private fun openPairing(mode: String) {
         startActivity(
-            android.content.Intent(this, PairingActivity::class.java)
+            Intent(this, PairingActivity::class.java)
                 .putExtra(PairingActivity.EXTRA_MODE, mode)
         )
     }
 
     private suspend fun refreshPeerUi() {
-        val peer = container.repository.peer()
+        configured = container.engine.isConfigured()
+        // A peer row can outlive the invitation (forget/unpair). Never present its name and
+        // pairing date as if that device were still the configured partner.
+        peer = if (configured) container.repository.peer() else null
+        val name = peerName()
+        binding.textConversationName.text = name
+        binding.textAvatar.text = initial(name)
+        binding.textContactAvatar.text = initial(name)
+        binding.textPeerLabel.text = name
         binding.inputPeerLabel.setText(peer?.label.orEmpty())
-        binding.textPeerLabel.text = when {
-            peer?.label?.isNotBlank() == true -> peer.label
-            peer?.displayName?.isNotBlank() == true -> peer.displayName
-            peer != null -> getString(R.string.home_partner_unknown)
-            else -> getString(R.string.home_partner_unknown)
-        }
-        val configured = container.engine.isConfigured()
-        binding.buttonOpenChat.isVisible = configured
+        binding.textPeerDevice.text = deviceLine(name)
+        binding.cardPartner.isVisible = configured
         binding.buttonUnpair.isVisible = configured
         binding.buttonCreate.isVisible = !configured
         binding.buttonJoin.isVisible = !configured
-        binding.cardPartner.isVisible = configured
+        binding.inputPeerLabel.isEnabled = configured
+        binding.buttonSaveLabel.isEnabled = configured
+        renderStatus(latestStatus)
+        updateConversationCard()
+        updateUnreadBadge()
+        renderNotificationCard()
+    }
+
+    private fun peerName(): String {
+        val label = peer?.label?.takeIf { it.isNotBlank() }
+        val displayName = peer?.displayName?.takeIf { it.isNotBlank() }
+        return label ?: displayName ?: getString(
+            if (configured) R.string.home_partner_connecting else R.string.home_partner_unknown
+        )
+    }
+
+    private fun deviceLine(currentName: String): String {
+        val displayName = peer?.displayName
+            ?.takeIf { it.isNotBlank() && it != currentName }
+        val pairedAt = peer?.pairedAt?.takeIf { it > 0 }?.let { timestamp ->
+            getString(
+                R.string.home_paired_on,
+                DateFormat.getMediumDateFormat(this).format(Date(timestamp))
+            )
+        }
+        val details = listOfNotNull(displayName, pairedAt).joinToString(" · ")
+        return details.ifEmpty {
+            getString(if (configured) R.string.home_contact_device else R.string.home_unknown_device)
+        }
+    }
+
+    private fun initial(name: String): String {
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) return "K"
+        val first = trimmed.firstOrNull { it.isLetterOrDigit() } ?: trimmed.first()
+        return first.uppercase()
+    }
+
+    private fun updateConversationCard() {
+        val latest = messages.lastOrNull()
+        if (latest == null) {
+            binding.textConversationPreview.setText(
+                if (configured) R.string.home_conversation_empty_hint else R.string.home_conversation_new
+            )
+            binding.textConversationTime.text = ""
+        } else {
+            val content = when (latest.kind) {
+                MessageKind.FILE -> getString(
+                    R.string.home_file_preview,
+                    latest.fileName ?: latest.body
+                )
+
+                MessageKind.TEXT -> latest.body
+            }
+            binding.textConversationPreview.text = if (latest.direction == MessageDirection.OUTGOING) {
+                getString(R.string.home_preview_you, content)
+            } else {
+                content
+            }
+            binding.textConversationTime.text = UiTime.conversationTime(this, latest.createdAt)
+        }
+        binding.buttonClear.isVisible = messages.isNotEmpty()
+    }
+
+    private fun updateUnreadBadge() {
+        binding.textUnreadBadge.isVisible = unread > 0
+        binding.textUnreadBadge.text = if (unread > 99) "99+" else unread.toString()
     }
 
     private fun saveLabel() {
         val label = binding.inputPeerLabel.text?.toString()?.trim().orEmpty()
         lifecycleScope.launch {
             container.repository.setPeerLabel(label.ifEmpty { null })
+            peer = container.repository.peer()
             refreshPeerUi()
             binding.inputPeerLabel.clearFocus()
+            Toast.makeText(this@HomeActivity, R.string.home_label_saved, Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -112,7 +226,7 @@ class HomeActivity : AppCompatActivity() {
             .setMessage(R.string.chat_clear_confirm_message)
             .setNegativeButton(R.string.cancel, null)
             .setPositiveButton(R.string.chat_clear_confirm_ok) { _, _ ->
-                lifecycleScope.launch { container.repository.clearConversation() }
+                lifecycleScope.launch { container.engine.clearConversation() }
             }
             .show()
     }
@@ -125,6 +239,8 @@ class HomeActivity : AppCompatActivity() {
             .setPositiveButton(R.string.home_unpair) { _, _ ->
                 container.engine.forgetPartner()
                 ConnectionService.stop(this)
+                configured = false
+                peer = null
                 lifecycleScope.launch { refreshPeerUi() }
             }
             .show()
@@ -139,25 +255,14 @@ class HomeActivity : AppCompatActivity() {
                     .show()
             }
 
-            EngineEvent.PairingCompleted -> lifecycleScope.launch { refreshPeerUi() }
+            EngineEvent.PairingCompleted -> lifecycleScope.launch {
+                peer = container.repository.peer()
+                refreshPeerUi()
+            }
+
             EngineEvent.PeerOffline -> Unit
         }
     }
-
-    private fun requestNotificationPermission() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
-        val granted = ContextCompat.checkSelfPermission(
-            this,
-            android.Manifest.permission.POST_NOTIFICATIONS
-        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-        if (granted) return
-        notificationPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
-    }
-
-    private val notificationPermission =
-        registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) {
-            // A denial only hides the ongoing notification; the service keeps running.
-        }
 
     private fun renderStatus(status: ConnectionStatus) {
         val (colorRes, labelRes) = when (status.state) {
@@ -176,9 +281,62 @@ class HomeActivity : AppCompatActivity() {
         binding.statusDot.backgroundTintList =
             android.content.res.ColorStateList.valueOf(ContextCompat.getColor(this, colorRes))
         binding.textStatus.setText(labelRes)
+        binding.textConversationStatus.setText(labelRes)
         binding.textStatusDetail.isVisible = status.state == ConnectionState.UNABLE_TO_CONNECT
         if (status.state == ConnectionState.UNABLE_TO_CONNECT) {
             binding.textStatusDetail.setText(R.string.state_unable_detail)
+        }
+    }
+
+    private fun requestNotifications() {
+        when {
+            MessageNotifications.canPost(this) -> Unit
+            MessageNotifications.shouldAskPermission(this) -> {
+                MessageNotifications.markPermissionAsked(this)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }
+            }
+
+            else -> openNotificationSettings()
+        }
+    }
+
+    private fun openNotificationSettings() {
+        val direct = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+            .putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+        try {
+            startActivity(direct)
+        } catch (e: Exception) {
+            try {
+                startActivity(
+                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                        .setData(android.net.Uri.parse("package:$packageName"))
+                )
+            } catch (e: Exception) {
+                // No settings activity: the card simply remains informational.
+            }
+        }
+    }
+
+    private fun renderNotificationCard() {
+        val canPost = MessageNotifications.canPost(this)
+        // Once notifications work, the card is only noise. It appears again automatically if
+        // the user revokes the permission or blocks notifications in system settings.
+        binding.cardNotifications.isVisible = !canPost
+        if (canPost) {
+            binding.textNotificationStatus.setText(R.string.home_notifications_on)
+            binding.buttonNotifications.setText(R.string.home_notifications_on)
+            binding.buttonNotifications.isEnabled = false
+        } else {
+            val canAsk = MessageNotifications.shouldAskPermission(this)
+            binding.textNotificationStatus.setText(
+                if (canAsk) R.string.home_notifications_body else R.string.home_notifications_off
+            )
+            binding.buttonNotifications.setText(
+                if (canAsk) R.string.home_notifications_enable else R.string.home_notifications_settings
+            )
+            binding.buttonNotifications.isEnabled = true
         }
     }
 }

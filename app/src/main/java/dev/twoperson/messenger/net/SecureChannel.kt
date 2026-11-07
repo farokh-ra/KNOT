@@ -14,7 +14,7 @@ sealed interface OpenResult {
 
 /**
  * Encrypted frame channel: AES-256-GCM with a per-direction monotonic counter, a replay
- * window of 128 frames and the header bound as associated data.
+ * window of [WINDOW_BITS] frames and the header bound as associated data.
  */
 class SecureChannel(
     private val sendKey: ByteArray,
@@ -23,7 +23,7 @@ class SecureChannel(
 
     private var sendCounter = 0L
     private var highestReceived = -1L
-    private val window = LongArray(2)
+    private val window = LongArray(WINDOW_BITS / 64)
 
     fun seal(kind: Int, payload: ByteArray): ByteArray {
         val counter = sendCounter++
@@ -73,18 +73,13 @@ class SecureChannel(
         if (delta < 0) return false
         if (delta >= WINDOW_BITS) return true
         val index = delta.toInt()
-        return (window[index / 64] shr (index % 64)) and 1L == 1L
+        return (window[index / 64] ushr (index % 64)) and 1L == 1L
     }
 
     private fun markSeen(counter: Long) {
         if (counter > highestReceived) {
             val shift = counter - highestReceived
-            if (shift >= WINDOW_BITS) {
-                window[0] = 0
-                window[1] = 0
-            } else {
-                shiftLeft(shift.toInt())
-            }
+            shiftLeft(if (shift >= WINDOW_BITS) WINDOW_BITS else shift.toInt())
             highestReceived = counter
             // Bit 0 always represents the highest counter seen so far.
             window[0] = window[0] or 1L
@@ -96,26 +91,30 @@ class SecureChannel(
         }
     }
 
+    /** Shifts the whole window toward higher counters, discarding frames that fall out. */
     private fun shiftLeft(bits: Int) {
         if (bits <= 0) return
         if (bits >= WINDOW_BITS) {
-            window[0] = 0
-            window[1] = 0
+            window.fill(0L)
             return
         }
-        if (bits >= 64) {
-            window[1] = window[0]
-            window[0] = 0
-            shiftLeft(bits - 64)
+        val wordShift = bits / 64
+        val bitShift = bits % 64
+        if (bitShift == 0) {
+            for (index in window.indices.reversed()) {
+                window[index] = if (index >= wordShift) window[index - wordShift] else 0L
+            }
             return
         }
-        val low = window[0] shl bits
-        val high = (window[1] shl bits) or (window[0] ushr (64 - bits))
-        window[0] = low
-        window[1] = high
+        for (index in window.indices.reversed()) {
+            val high = if (index >= wordShift) window[index - wordShift] else 0L
+            val low = if (index - wordShift - 1 >= 0) window[index - wordShift - 1] else 0L
+            window[index] = (high shl bitShift) or (low ushr (64 - bitShift))
+        }
     }
 
     companion object {
-        private const val WINDOW_BITS = 128
+        /** Covers the whole reliable send window plus reordering slack. */
+        private const val WINDOW_BITS = 4096
     }
 }
