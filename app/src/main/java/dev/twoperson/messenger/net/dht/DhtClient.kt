@@ -8,6 +8,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withTimeoutOrNull
 import java.net.DatagramPacket
 import java.net.DatagramSocket
+import java.net.Inet4Address
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.util.concurrent.ConcurrentHashMap
@@ -35,6 +36,9 @@ class DhtClient(
     private val routingLock = Any()
     private val bootstrapped = AtomicBoolean(false)
 
+    @Volatile
+    private var lastBootstrapAttemptAt = 0L
+
     fun onPacket(data: ByteArray, from: InetSocketAddress): Boolean {
         val message = Bencode.decode(data)?.asDict() ?: return false
         val type = message.entries["y"]?.asString() ?: return false
@@ -58,12 +62,17 @@ class DhtClient(
     }
 
     /** Seeds the routing table from the public bootstrap nodes. */
-    suspend fun bootstrap(timeoutMs: Long = 5_000): Boolean {
+    suspend fun bootstrap(timeoutMs: Long = 4_000): Boolean {
         if (bootstrapped.get()) return true
         if (nodesSnapshot().size >= 8) {
             bootstrapped.set(true)
             return true
         }
+        // Networks that block the DHT ports answer nothing; retrying every discovery cycle
+        // would stall startup. Back off between attempts instead.
+        val now = System.currentTimeMillis()
+        if (now - lastBootstrapAttemptAt < BOOTSTRAP_RETRY_MS) return false
+        lastBootstrapAttemptAt = now
         val seeds = resolveSeeds()
         if (seeds.isEmpty()) {
             log("dht: no bootstrap node resolvable")
@@ -176,6 +185,7 @@ class DhtClient(
     private fun addNode(node: Node) {
         if (node.id.size != 20 || node.address.port == 0) return
         if (node.address.isUnresolved) return
+        if (node.address.address !is Inet4Address) return
         synchronized(routingLock) {
             if (routing.any { it.address == node.address }) return
             routing.add(node)
@@ -244,9 +254,10 @@ class DhtClient(
         val addresses = ArrayList<InetSocketAddress>()
         for ((host, port) in SEEDS) {
             try {
-                InetAddress.getAllByName(host).take(2).forEach {
-                    addresses.add(InetSocketAddress(it, port))
-                }
+                InetAddress.getAllByName(host)
+                    .filterIsInstance<Inet4Address>()
+                    .take(2)
+                    .forEach { addresses.add(InetSocketAddress(it, port)) }
             } catch (e: Exception) {
                 log("dht: cannot resolve $host")
             }
@@ -269,13 +280,18 @@ class DhtClient(
         private const val MAX_ROUNDS = 4
         private const val MAX_ROUTING = 128
 
+        /** A failed bootstrap is retried at this interval, not on every discovery cycle. */
+        private const val BOOTSTRAP_RETRY_MS = 30_000L
+
         /** Public DHT bootstrap nodes. Discovery only; they never carry chat content. */
         private val SEEDS = listOf(
             "router.bittorrent.com" to 6881,
             "dht.transmissionbt.com" to 6881,
             "router.utorrent.com" to 6881,
             "dht.libtorrent.org" to 25401,
-            "dht.aelitis.com" to 6881
+            "dht.aelitis.com" to 6881,
+            "dht.ftorrent.com" to 6881,
+            "router.sectorrent.com" to 6881
         )
     }
 }

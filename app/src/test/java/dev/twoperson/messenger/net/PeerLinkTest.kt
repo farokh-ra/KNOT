@@ -329,6 +329,83 @@ class PeerLinkTest {
         }
     }
 
+    /**
+     * Mirrors the engine path where a link exists only because the peer dialed us: the
+     * responder has never sent its initiation to the peer and must still complete the
+     * handshake from the incoming packet alone.
+     */
+    @Test
+    fun aLinkThatOnlyAnswersAnIncomingInitiationStillConnects() = runBlocking {
+        val loopback = InetAddress.getByName("127.0.0.1")
+        val socketDialer = DatagramSocket(0, loopback)
+        val socketResponder = DatagramSocket(0, loopback)
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val authKey = Invite.authKey(Invite.newSecret())
+        val privateA = X25519.generatePrivateKey()
+        val privateB = X25519.generatePrivateKey()
+        val publicA = X25519.publicKey(privateA)
+        val publicB = X25519.publicKey(privateB)
+        val toResponder = Channel<AppMessage>(Channel.UNLIMITED)
+
+        lateinit var dialer: PeerLink
+        lateinit var responder: PeerLink
+
+        dialer = PeerLink(
+            socketDialer,
+            InetSocketAddress(loopback, socketResponder.localPort),
+            Handshake(authKey, privateA, publicA),
+            scope,
+            object : PeerLink.Listener {
+                override fun onHandshakeComplete(peerIdentityPublicKey: ByteArray) = Unit
+                override fun onApplicationMessage(message: AppMessage) = Unit
+                override fun onClosed(reason: String) = Unit
+            }
+        )
+        // The responder starts with a dead remote: it can only learn the peer from the
+        // initiation that arrives on its socket, exactly like the engine's incoming path.
+        responder = PeerLink(
+            socketResponder,
+            InetSocketAddress(loopback, 1),
+            Handshake(authKey, privateB, publicB),
+            scope,
+            object : PeerLink.Listener {
+                override fun onHandshakeComplete(peerIdentityPublicKey: ByteArray) = Unit
+                override fun onApplicationMessage(message: AppMessage) {
+                    toResponder.trySend(message)
+                }
+
+                override fun onClosed(reason: String) = Unit
+            }
+        )
+        val pumpDialer = scope.launch(Dispatchers.IO) { pump(socketDialer, dialer) }
+        val pumpResponder = scope.launch(Dispatchers.IO) { pump(socketResponder, responder) }
+
+        try {
+            assertNotNull(dialer.awaitReady(10_000))
+            assertNotNull(responder.awaitReady(10_000))
+            assertEquals(publicA.toList(), responder.peerIdentity!!.toList())
+            assertEquals(publicB.toList(), dialer.peerIdentity!!.toList())
+
+            val message = AppMessage.Text(
+                Crypto.randomBytes(16),
+                1,
+                System.currentTimeMillis(),
+                "incoming-only"
+            )
+            assertTrue(dialer.sendApplicationMessage(message))
+            val received = withTimeout(10_000) { toResponder.receive() } as AppMessage.Text
+            assertEquals("incoming-only", received.body)
+        } finally {
+            dialer.close("test_done")
+            responder.close("test_done")
+            pumpDialer.cancel()
+            pumpResponder.cancel()
+            socketDialer.close()
+            socketResponder.close()
+            scope.cancel()
+        }
+    }
+
     private fun pump(socket: DatagramSocket, link: PeerLink) {
         val buffer = ByteArray(2048)
         while (!socket.isClosed) {

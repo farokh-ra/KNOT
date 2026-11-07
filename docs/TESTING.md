@@ -5,7 +5,7 @@
 All checks below were run on the build machine during development. Rebuild locally with the
 included Gradle wrapper to reproduce them.
 
-### JVM unit and integration tests — 48 tests, all passing
+### JVM unit and integration tests — 53 tests, all passing
 
 ```bash
 ./gradlew :app:testDebugUnitTest
@@ -19,12 +19,28 @@ included Gradle wrapper to reproduce them.
 | `protocol.AppCodecTest` (11) | Round trips (including Unicode), unknown types rejected, truncated payloads rejected, invalid UTF-8 rejected, empty text rejected, absurd timestamps rejected, wrong version rejected, maximum-size text encodable |
 | `protocol.ChunkingTest` (4) | Out-of-order reassembly, duplicate tolerance, inconsistent counts rejected, oversized chunks rejected, stale assemblies expire |
 | `net.SecureChannelTest` (5) | Encrypted frame round trip, replay reported as duplicate, tampering rejected, wrong key rejected, truncation rejected |
-| `net.HandshakeTest` (6) | Both sides derive mirrored keys, wrong invitation cannot join, tampered MAC rejected, retransmissions idempotent, cross-session confirmation rejected, keys bound to the transcript |
-| `net.PeerLinkTest` (4) | **Full stack over loopback UDP**: real handshake, identity exchange, encrypted text delivery and transport acknowledgement; wrong invitation never connects; **both directions keep working across transport ACKs and idle heartbeats** (the interleaving that stalled the v1 stream and closed the link); a spoofed initiation cannot tear down a live link |
+| `net.HandshakeTest` (7) | Both sides derive mirrored keys, wrong invitation cannot join, tampered MAC rejected, retransmissions idempotent, cross-session confirmation rejected, keys bound to the transcript, static initiation check and identity extraction |
+| `net.PeerLinkTest` (5) | **Full stack over loopback UDP**: real handshake, identity exchange, encrypted text delivery and transport acknowledgement; wrong invitation never connects; **both directions keep working across transport ACKs and idle heartbeats** (the interleaving that stalled the v1 stream and closed the link); a spoofed initiation cannot tear down a live link; a link that only answers an incoming initiation (the engine's responder path) still connects |
 | `net.dht.BencodeTest` (5) | Nested round trip with binary strings, canonical dictionary order, malformed input and trailing garbage rejected |
+| `net.rendezvous.StunClientTest` (2) | XOR-MAPPED-ADDRESS parsing from a real binding-success packet; a reply with a foreign transaction id is ignored |
+| `net.rendezvous.TrackerRendezvousTest` (1) | Real BEP 15 connect/announce byte layout against a local fake tracker: advertised port, `started` event, compact peer parsing, announce throttle |
 
 These tests exercise the real socket path (`DatagramPacket`/`DatagramSocket` on loopback)
 and the real crypto, not mocks.
+
+### Live rendezvous check (build machine network)
+
+A temporary JVM integration test opened two local UDP sockets through `PublicRendezvous` and
+announced a random topic. Result on 2026-11-07:
+
+- STUN learned both public endpoints (`172.232.208.202:33346` and `:49610`);
+- `open.stealth.si:80`, `tracker.torrents.observer:80` and `open.ftorrent.com:443` all
+  answered, and socket 2 discovered socket 1's endpoint;
+- the same network **blocks the DHT bootstrap ports** (all five seeds timed out), which is the
+  failure the tracker/STUN path was added for.
+
+The temporary live test was not committed; the deterministic fake-server tests remain in the
+suite.
 
 ### Build and artifact checks
 
@@ -51,10 +67,10 @@ battery/data measurements. They are the job of the matrix below.
 
 ## Two-phone test matrix (to be completed)
 
-Use two physical phones with the release APK. For each row record: DHT discovery success,
-direct connection success, time to connect, whether a message was delivered and
-acknowledged, failure reason if any, and the connection label the app displayed
-(*direct (internet)* / *direct (local network)*).
+Use two physical phones with the release APK. For each row record: rendezvous discovery success
+(which path: tracker/STUN, DHT or LAN beacon), direct connection success, time to connect,
+whether a message was delivered and acknowledged, failure reason if any, and the connection
+label the app displayed (*direct (internet)* / *direct (local network)*).
 
 | # | Network setup | Discovery | Direct | Time | Message + ACK | Label / failure |
 |---|---|---|---|---|---|---|

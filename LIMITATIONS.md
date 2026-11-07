@@ -6,12 +6,16 @@ adding a relay.
 ## Connectivity
 
 1. **A direct path cannot exist on every network.** Carrier-grade NAT, symmetric NAT, strict
-   corporate firewalls and some VPN combinations prevent inbound UDP. In those cases the app
-   shows *Unable to connect directly* and keeps retrying. It will not route your messages
+   corporate firewalls and some VPN combinations prevent inbound UDP. Tracker and STUN
+   rendezvous improve discovery but cannot punch through a symmetric NAT; in those cases the
+   app shows *Unable to connect directly* and keeps retrying. It will not route your messages
    through a third party.
-2. **Discovery needs the public DHT.** The bootstrap nodes (`router.bittorrent.com`,
-   `dht.transmissionbt.com`, `router.utorrent.com`, `dht.libtorrent.org`, `dht.aelitis.com`)
-   must be reachable, and networks that block outbound UDP will not discover anything.
+2. **Discovery needs at least one public rendezvous path.** The app tries UDP trackers on
+   HTTP/HTTPS ports (80/443), STUN and the DHT bootstrap nodes
+   (`router.bittorrent.com`, `dht.transmissionbt.com`, `router.utorrent.com`,
+   `dht.libtorrent.org`, `dht.aelitis.com`). Many carriers block the DHT's port 6881; the
+   tracker path keeps discovery working there. A network that blocks all outbound UDP cannot
+   discover anything.
 3. **Same-Wi-Fi connections rely on the LAN beacon or NAT hairpinning.** Many routers do not
    support hairpinning; the beacon (UDP broadcast on port 41999) usually saves this case, but
    client-isolated Wi-Fi and broadcast filtering can defeat it. Some routers block the fixed
@@ -49,8 +53,8 @@ adding a relay.
     covered by unit tests, but not externally audited and not the Noise protocol itself.
 13. **No invitation expiry or revocation flow** beyond creating a new invitation or using
     *Forget partner*.
-14. **Metadata is visible to the network**: DHT nodes and the peer see your public IP/port
-    while the app is open.
+14. **Metadata is visible to the network**: DHT nodes, UDP trackers, STUN servers and the peer
+    see your public IP/port while the app is open.
 
 ## Verification
 

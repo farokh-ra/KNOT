@@ -12,17 +12,19 @@ this repository and no hosted service operated for this app.
 | Engine | `engine/ConnectionEngine` | Connection state machine, discovery loop, outbox, acknowledgements, network-change handling, instant reconnect |
 | Protocol | `protocol/Protocol`, `protocol/Chunking` | Versioned message schema, strict validation, chunking and bounded reassembly |
 | Transport | `net/UdpTransport`, `net/PeerLink`, `net/SecureChannel`, `net/Handshake`, `net/Wire` | One UDP socket, authenticated handshake, encrypted reliable frames |
-| Discovery | `net/dht/DhtClient`, `net/dht/Bencode`, `net/LanBeacon` | DHT rendezvous on a derived topic; same-subnet beacon |
+| Discovery | `net/rendezvous/TrackerRendezvous`, `net/rendezvous/StunClient`, `net/rendezvous/PublicRendezvous`, `net/dht/DhtClient`, `net/dht/Bencode`, `net/LanBeacon` | BEP 15 tracker and STUN rendezvous on allowed ports; DHT rendezvous on a derived topic; same-subnet beacon |
 | Storage | `data/Db`, `data/MessageRepository`, `data/SecureStore` | SQLite history, pinned peer identity, Keystore-wrapped secrets |
 | Crypto | `crypto/X25519`, `crypto/Crypto`, `crypto/Invite` | X25519 (RFC 7748), HKDF-SHA256, HMAC, AES-256-GCM, invitation/topic derivation |
 
 ## Why one UDP socket
 
-`UdpTransport` binds a single ephemeral UDP socket and shares it between the DHT client and
-the peer link. The NAT mapping that the other device learns from the DHT is the mapping of
-that socket's source port, so chat packets must leave from the same socket for hole
-punching to succeed. A peer packet is recognised by the `TPM\x01` magic; a KRPC packet by
-its leading `d` (bencoded dictionary).
+`UdpTransport` binds a single ephemeral UDP socket and shares it between the DHT client, the
+tracker/STUN rendezvous client and the peer link. The NAT mapping that the other device learns
+from any rendezvous path is the mapping of that socket's source port, so chat packets must
+leave from the same socket for hole punching to succeed. Routing is by shape: a peer packet
+starts with the `TPM` magic, a KRPC packet with a leading `d` (bencoded dictionary), a STUN
+reply with `0x0101`, and a BEP 15 tracker reply with a non-negative action word. Anything
+else is dropped.
 
 ## Connection state machine
 
@@ -36,12 +38,19 @@ DISCOVERING for > 40 s without a connection ──▶ UNABLE_TO_CONNECT (keeps r
 CONNECTED ──link closed──▶ DISCONNECTED ──backoff──▶ DISCOVERING
 ```
 
-- Discovery cycles run every 4 s: DHT `get_peers`/`announce_peer` plus a LAN beacon every 3 s.
-  One `DhtClient` is reused for the lifetime of the socket, so reconnects do not repeat the
-  bootstrap round trip.
-- Candidates are attempted one at a time with a 12 s handshake budget. The endpoint that last
+- Discovery runs two loops in parallel. The DHT loop performs `get_peers`/`announce_peer`
+  every 4 s; the public-rendezvous loop asks STUN for the socket's translated port and
+  announces the derived topic on BEP 15 trackers every 7 s (tracker-requested intervals are
+  honoured). A LAN beacon broadcasts every 3 s. One client of each kind is reused for the
+  lifetime of the socket, so reconnects do not repeat DNS or bootstrap work.
+- Incoming authenticated initiations are accepted even when this side is not dialing: the
+  engine builds a responder `PeerLink` from the packet, and promotes it to `activeLink` once
+  the handshake completes. This is what makes one-sided discovery (only the peer found a
+  candidate) connect.
+- Candidates are attempted one at a time with a 6 s handshake budget. The endpoint that last
   carried authenticated traffic is tried first with a 4 s budget, which is what makes a
-  reconnect take well under a second instead of waiting for a lookup.
+  reconnect take well under a second instead of waiting for a lookup. Retried candidates are
+  deduplicated for 15 s, and the engine filters its own STUN endpoint.
 - Reconnection uses bounded exponential backoff (1.5 s → 30 s) with jitter.
 - Only the **default** network is watched (`registerDefaultNetworkCallback`). Wi-Fi and mobile
   data coexisting is not an event, and a connected link is never torn down by a network

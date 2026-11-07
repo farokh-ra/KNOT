@@ -36,10 +36,10 @@ Knot is a deliberately small messenger for **one private conversation between tw
 It is built around a simple rule: if the two phones cannot reach each other directly, the app
 says so. It never silently routes a message through a third party.
 
-Public BitTorrent-DHT bootstrap nodes are used **only for rendezvous** — to help the two
-devices discover each other's UDP endpoint. Chat traffic travels over a direct, authenticated,
-encrypted peer connection. There is no server component in this repository and no hosted
-service operated for the app.
+Public infrastructure — BitTorrent-DHT bootstrap nodes, UDP trackers and STUN servers — is
+used **only for rendezvous**, to help the two devices discover each other's UDP endpoint.
+Chat traffic travels over a direct, authenticated, encrypted peer connection. There is no
+server component in this repository and no hosted service operated for the app.
 
 | | |
 |---|---|
@@ -65,7 +65,7 @@ NAT, firewall or carrier-grade NAT. When a path does not exist, Knot reports
 | | Feature | What it means |
 |---|---|---|
 | **Pair once** | 32-byte invitation secret | One person creates an invitation; the other scans the QR code or pastes the `TPM1-…` code. |
-| **Serverless discovery** | Public DHT + LAN beacon | Both devices derive a rendezvous topic from the invitation and find each other without an account server. |
+| **Serverless discovery** | UDP trackers + DHT + LAN beacon | Both devices derive a rendezvous topic from the invitation and find each other without an account server, even on networks that block the usual DHT ports. |
 | **Direct connection** | UDP hole punching | Peers authenticate and talk directly; no TURN, relay or message-forwarding path exists in the codebase. |
 | **End-to-end encryption** | X25519 + HKDF + AES-256-GCM | Fresh ephemeral keys per session, authenticated handshake, per-direction nonces and a replay window. |
 | **Reliable messaging** | Local outbox + ACKs | Messages are stored before sending, retried after reconnection and acknowledged only after the peer stores them. |
@@ -95,14 +95,24 @@ authKey = HMAC-SHA256(secret, "tpmsg/v1/auth")
 topic   = HMAC-SHA256(authKey, "tpmsg/v1/topic")[0..19]
 ```
 
-The raw secret is **never published**. Only the derived 20-byte topic reaches the DHT.
+The raw secret is **never published**. Only the derived 20-byte topic reaches the DHT and the
+public trackers.
 
 ### 2. Discovery
 
-Both devices announce and look up the derived topic on the public BitTorrent mainline DHT
-(BEP 5 `get_peers` / `announce_peer`). On the same Wi-Fi, a small UDP broadcast beacon on port
-41999 provides a faster local path. The DHT learns a derived topic hash and your public IP/UDP
-port while the app is open — nothing else.
+Discovery has four independent paths, all sharing the same UDP socket:
+
+1. **UDP trackers (BEP 15)** on HTTP/HTTPS ports (80/443). Both devices announce the derived
+   topic and read each other's public endpoint back. This keeps discovery working on carriers
+   that block the DHT's port 6881.
+2. **STUN** learns the NAT's translated port for the shared socket, so the tracker announce
+   publishes the port peers should actually dial.
+3. **BitTorrent mainline DHT** (BEP 5 `get_peers` / `announce_peer`) on the derived topic.
+4. **LAN beacon** on UDP port 41999 for the same-Wi-Fi case.
+
+These services learn a derived topic hash and your public IP/UDP port while the app is open —
+nothing else. Incoming authenticated handshakes are accepted at any time, not only while this
+side is dialing, so one-sided discovery still connects.
 
 ### 3. Direct connection
 
@@ -144,7 +154,7 @@ flowchart LR
     end
 
     AENG <-->|"Direct UDP · AES-256-GCM"| BENG
-    AENG -.->|"rendezvous only"| DHT[("Public BitTorrent DHT")]
+    AENG -.->|"rendezvous only"| DHT[("Public rendezvous<br/>UDP trackers · STUN · DHT")]
     BENG -.->|"rendezvous only"| DHT
     AENG <-.->|"LAN beacon"| BENG
 ```
@@ -156,7 +166,7 @@ flowchart LR
 | **Engine** | Connection state machine, discovery loop, outbox, acknowledgements, network-change handling and reconnect backoff. |
 | **Protocol** | Versioned binary schema with strict validation, chunking and bounded reassembly. |
 | **Transport** | One UDP socket, authenticated handshake, encrypted reliable frames and heartbeats. |
-| **Discovery** | Minimal mainline-DHT client plus a same-subnet LAN beacon. |
+| **Discovery** | BEP 15 UDP-tracker rendezvous, STUN public-endpoint lookup, minimal mainline-DHT client and a same-subnet LAN beacon. |
 | **Storage** | SQLite message history, pinned peer identity and Keystore-wrapped secrets. |
 | **Crypto** | X25519, HKDF-SHA256, HMAC-SHA256 and AES-256-GCM. |
 
@@ -166,8 +176,8 @@ wire format is in [`docs/PROTOCOL.md`](docs/PROTOCOL.md).
 ## Security model
 
 Knot assumes the network is hostile: packets can be observed, injected, replayed, dropped or
-reordered. Public DHT nodes are untrusted infrastructure. The invitation is exchanged
-out-of-band with the intended person.
+reordered. Public DHT nodes, UDP trackers and STUN servers are untrusted infrastructure. The
+invitation is exchanged out-of-band with the intended person.
 
 | Property | Implementation |
 |---|---|
@@ -178,7 +188,7 @@ out-of-band with the intended person.
 | **Forward secrecy** | Session keys come from ephemeral X25519 keys; the long-term identity key signs into the transcript but never encrypts messages |
 | **Identity pinning** | The peer's static X25519 identity is pinned after the first successful pairing; a changed identity is rejected |
 | **Secret storage** | The identity private key and invitation secret are wrapped with a non-exportable AES key held in the Android Keystore |
-| **Discovery privacy** | Only the HMAC-derived 20-byte topic is published, never the invitation secret |
+| **Discovery privacy** | Only the HMAC-derived 20-byte topic is published to DHT nodes and trackers; STUN only reflects the socket's public endpoint. The invitation secret is never published |
 | **Relay** | None. There is no relay, TURN or forwarding code path anywhere in the project |
 
 ### Honest gaps
@@ -191,8 +201,8 @@ out-of-band with the intended person.
   invitation or using *Forget partner* is manual.
 - Message history is **not encrypted at rest**. It is plain SQLite inside the app sandbox;
   the identity key and invitation secret are wrapped, but message text is not.
-- While the app is open, DHT nodes and the other device learn your public IP and UDP port.
-  This is inherent to serverless rendezvous.
+- While the app is open, DHT nodes, UDP trackers, STUN servers and the other device learn your
+  public IP and UDP port. This is inherent to serverless rendezvous.
 - A compromised device, rooted phone, screenshot malware or a malicious keyboard is outside
   the threat model.
 
@@ -206,7 +216,7 @@ Read the full threat model and checklist in [`docs/SECURITY.md`](docs/SECURITY.m
 | UI | Android Views, Material 3, ViewBinding |
 | Concurrency | Kotlin Coroutines and `StateFlow` |
 | Networking | Raw UDP (`DatagramSocket`), custom reliable link |
-| Discovery | Minimal BitTorrent mainline DHT (BEP 5), LAN broadcast beacon |
+| Discovery | BEP 15 UDP trackers, RFC 5389 STUN, BitTorrent mainline DHT (BEP 5), LAN broadcast beacon |
 | Cryptography | `java.security` / `javax.crypto`: X25519, HKDF-SHA256, HMAC-SHA256, AES-256-GCM |
 | Storage | SQLite (`SQLiteOpenHelper`), Android Keystore |
 | QR | ZXing core + `zxing-android-embedded` (no Play Services) |
@@ -352,9 +362,9 @@ partner** to remove the invitation and require a new pairing.
 ./gradlew :app:testDebugUnitTest
 ```
 
-The JVM suite contains **48 tests** across crypto, protocol, DHT encoding, secure channel,
-handshake and a full loopback-UDP peer link. The tests use real sockets and real crypto, not
-mocks.
+The JVM suite contains **53 tests** across crypto, protocol, DHT encoding, STUN, BEP 15
+trackers, secure channel, handshake and a full loopback-UDP peer link. The tests use real
+sockets and real crypto, not mocks.
 
 | Test class | Focus |
 |---|---|
@@ -365,8 +375,10 @@ mocks.
 | `protocol.ChunkingTest` | Out-of-order reassembly, duplicates, bounds and expiry |
 | `net.SecureChannelTest` | Encrypted frames, replay detection, tampering and truncation |
 | `net.HandshakeTest` | Mirrored keys, wrong invitation, tampered MAC, idempotent retransmission |
-| `net.PeerLinkTest` | Full loopback UDP link, bidirectional traffic, heartbeats, spoof resistance |
+| `net.PeerLinkTest` | Full loopback UDP link, bidirectional traffic, heartbeats, spoof resistance, incoming-only responder |
 | `net.dht.BencodeTest` | Nested bencode round trip, canonical order, malformed input |
+| `net.rendezvous.StunClientTest` | XOR-MAPPED-ADDRESS parsing, forged-transaction rejection |
+| `net.rendezvous.TrackerRendezvousTest` | Real BEP 15 connect/announce format, compact peer parsing, announce throttle |
 
 The build and artifact checks are recorded in [`docs/TESTING.md`](docs/TESTING.md), along with
 the **two-phone test matrix** that still needs to be completed on physical hardware. No
@@ -385,12 +397,13 @@ KNOT/
 │       │   │   ├── protocol/     Versioned schema, validation, chunking, reassembly
 │       │   │   ├── net/          UDP transport, handshake, secure channel, reliable link
 │       │   │   ├── net/dht/      Bencode and minimal mainline-DHT rendezvous client
+│       │   │   ├── net/rendezvous/  BEP 15 UDP trackers, STUN, shared-socket rendezvous
 │       │   │   ├── data/         SQLite history, pinned identity, Keystore-backed secrets
 │       │   │   ├── engine/       Connection state machine, discovery, outbox, ACKs
 │       │   │   ├── service/      Foreground service that holds the link open
 │       │   │   └── ui/           Home, Pairing and Chat screens
 │       │   └── res/              Material 3 layouts, theme, adaptive icon
-│       └── test/                 48 JVM tests (crypto, protocol, DHT, loopback link)
+│       └── test/                 53 JVM tests (crypto, protocol, rendezvous, loopback link)
 ├── docs/                         Architecture, protocol, security, testing, build, install
 ├── gradle/                       Gradle wrapper
 ├── signing/                      Local signing material (git-ignored)
@@ -424,7 +437,9 @@ adding a relay:
 - **A direct path cannot exist on every network.** Carrier-grade NAT, symmetric NAT, strict
   corporate firewalls and some VPN combinations block inbound UDP. Knot reports the failure
   and keeps retrying.
-- **Discovery needs the public DHT.** Networks that block outbound UDP cannot discover peers.
+- **Discovery needs either the DHT or a tracker/STUN server.** Networks that block all
+  outbound UDP cannot discover peers; UDP trackers on ports 80/443 cover the common case where
+  only the DHT's port 6881 is blocked.
 - **Both people must have the app running.** There is no push notification and no server to
   hold messages. A message sent while the peer is offline stays queued on the sender.
 - **Background delivery is best-effort.** A `dataSync` foreground service holds the link while
@@ -433,8 +448,8 @@ adding a relay:
 - **History is local and not encrypted at rest.** Clearing app data or uninstalling deletes it
   permanently. There is no backup, export or sync.
 - **The handshake is not externally audited.**
-- **Metadata is visible to the network.** DHT nodes and the peer see your public IP/port while
-  the app is open.
+- **Metadata is visible to the network.** DHT nodes, UDP trackers, STUN servers and the peer
+  see your public IP/port while the app is open.
 
 The complete list is in [`LIMITATIONS.md`](LIMITATIONS.md).
 
@@ -445,7 +460,7 @@ The complete list is in [`LIMITATIONS.md`](LIMITATIONS.md).
 - Native Kotlin Android app with three Material 3 screens.
 - Invitation pairing via QR code, paste and scan.
 - Direct-only UDP transport with authenticated X25519 handshake and AES-256-GCM frames.
-- Public-DHT rendezvous plus same-subnet LAN beacon.
+- Public rendezvous: UDP trackers (BEP 15), STUN and DHT, plus a same-subnet LAN beacon.
 - Reliable outbox, application acknowledgements, duplicate suppression and reconnect backoff.
 - SQLite history, pinned peer identity and Keystore-wrapped secrets.
 - Release signing configuration for APK Signature Scheme v2 + v3.
@@ -467,15 +482,16 @@ no server that stores or forwards chat content**.
 - Message history and the pinned peer identity live in the app's private SQLite database.
 - The identity private key and invitation secret are wrapped with a non-exportable AES key
   from the Android Keystore.
-- The DHT learns only a derived topic hash plus your IP/port while the app is open.
+- DHT nodes and UDP trackers learn only a derived topic hash plus your IP/port while the app
+  is open; STUN sees only the endpoint of the shared socket.
 - Chat content is sent only to the one authenticated peer endpoint.
 - Clearing app data or uninstalling destroys the local history and the wrapped secrets.
 
 ## FAQ
 
 **Is there a server?**
-No app-operated server. Public BitTorrent-DHT bootstrap nodes help the two devices find each
-other; they never carry chat content.
+No app-operated server. Public DHT bootstrap nodes, UDP trackers and STUN servers help the two
+devices find each other; they never carry chat content.
 
 **Can I use Knot with more than one person?**
 No. Version 1 is exactly one private conversation between two paired devices.
