@@ -27,72 +27,82 @@ adding a relay.
 
 ## Behaviour while the app is not open
 
-6. **Background delivery needs the app to still be running.** A `dataSync` foreground service
-   holds the direct connection while the screen is off or another app is in front, so leaving
-   the app no longer drops the link, and an ongoing notification shows the real state. It
-   cannot survive the device being powered off, the app being force-stopped by the user, or
-   long Doze/standby periods; in those cases the other side sees the link close and the app
-   reconnects when it runs again.
+6. **Background delivery is opt-in and needs the app to still be running.** With
+   *Settings → Background connection* enabled, a `dataSync` foreground service holds the direct
+   connection while the screen is off or another app is in front, and a silent ongoing
+   notification shows the real state. It cannot survive the device being powered off, the app
+   being force-stopped by the user, or long Doze/standby periods; in those cases the other side
+   sees the link close and the app reconnects when it runs again. With the option off, Knot
+   keeps the link for a short grace period after the last screen closes, then releases it.
 7. **Both people must have the app running for messages or files to travel.** There is no push
    notification and no server to hold data, so a message or file queued while the peer is off
    stays on the sender and continues after the peer reconnects.
+8. **Only one direct connection is active at a time.** Contacts are independent one-to-one
+   threads, but opening a different contact changes the engine's connection target, cancels
+   in-flight transfers for the previous contact and starts discovery for the new one. Queued
+   messages remain in each contact's own outbox and are retried when that contact becomes
+   active again.
 
 ## Messaging and file semantics
 
-8. **Delivery is only as good as the acknowledgement.** `Received by peer` means the other
+9. **Delivery is only as good as the acknowledgement.** `Received by peer` means the other
    device stored the message (or completed file) and returned an application-level ACK. There
    is no read receipt.
-9. **`Not delivered` is retried automatically** on the next connection and can also be retried
+10. **`Not delivered` is retried automatically** on the next connection and can also be retried
    immediately from the message long-press menu. The text or file is never destroyed, but it
    is also not guaranteed to arrive if the peer never comes back online.
-10. **Message text is limited to 2000 characters** (a strict schema limit).
-11. **Files are streamed, not uploaded.** Both devices must be online at the same time; there
+11. **Message text is limited to 2000 characters** (a strict schema limit).
+12. **Files are streamed, not uploaded.** Both devices must be online at the same time; there
     is no server or relay that stores bytes while the receiver is away.
-12. **The protocol caps a file at 4 TiB**, a file name at 255 UTF-8 bytes and a MIME type at
+13. **The protocol caps a file at 4 TiB**, a file name at 255 UTF-8 bytes and a MIME type at
     128 bytes. The UI rejects a known-oversize file before creating a message.
-13. **Providers that cannot report a size are copied once into app storage.** The copy is
+14. **Providers that cannot report a size are copied once into app storage.** The copy is
     capped at 4 TiB and requires enough free space for a second copy of the file.
-14. **Resume depends on the receiver’s local history.** The acknowledged offset, the running
+15. **Resume depends on the receiver’s local history.** The acknowledged offset, the running
     FNV-1a prefix digest and the `.part` file are device-local. A completed transfer is checked
     against the sender’s whole-file digest before it is published; a mismatch restarts that
     file from zero. Clearing the conversation cancels transfers and deletes those part files,
     so a later attempt starts from zero. The original SAF file is never modified.
-15. **Received files and cached outgoing copies are app-private but not encrypted at rest.**
+16. **Received files and cached outgoing copies are app-private but not encrypted at rest.**
     They are deleted when the conversation is cleared, the app data is cleared, or the app is
     uninstalled. A completed file can be exported explicitly to `Downloads/Knot`; there is no
     automatic sync or cloud backup.
-16. **A persisted SAF URI can become unavailable** if the provider revokes the grant or the
+17. **A persisted SAF URI can become unavailable** if the provider revokes the grant or the
     app is reinstalled. The message then reports the file as unavailable instead of crashing.
-17. **History is local and not encrypted at rest.** Clearing app data or uninstalling deletes
+18. **History is local and not encrypted at rest.** Clearing app data or uninstalling deletes
     it permanently. There is no backup, export or sync.
 
 ## Notifications
 
-18. **Alerting notifications are only for real incoming messages and completed files** while no
-    Knot screen is visible. They are never used to keep a connection alive.
-19. **The foreground-service notification is mandatory on Android.** It is placed on a silent,
-    minimum-importance channel and mirrors the connection state; it cannot be disabled while
-    the service runs without also stopping background connectivity.
-20. **Notification permission is requested only from the explicit enable button**, never on
+19. **Alerting notifications are only for real incoming messages and completed files** while no
+    Knot screen is visible. They are never used to keep a connection alive. Each notification
+    belongs to one conversation, keeps its unread count while the app is backgrounded and is
+    cleared when that chat is opened.
+20. **The foreground-service notification is mandatory only when background mode is on.** It is
+    placed on a silent, minimum-importance channel and mirrors the connection state. Turning
+    off *Background connection* removes the notification and returns the engine to the short
+    grace period. Android may still show an app-level foreground-service indicator in system
+    settings while the service runs.
+21. **Notification permission is requested only from the explicit enable button**, never on
     launch. If it is denied or notifications are blocked in system settings, the app still
-    sends and receives; the Chats screen shows the enable card again with a settings shortcut.
-    No server push exists, so a force-stopped app cannot be woken by a notification.
+    sends and receives; the Settings tab shows the blocked state and a settings shortcut. No
+    server push exists, so a force-stopped app cannot be woken by a notification.
 
 ## Security posture
 
-21. **The handshake is a custom construction**, tested against RFC 7748/HKDF vectors and
+22. **The handshake is a custom construction**, tested against RFC 7748/HKDF vectors and
     covered by unit tests, but not externally audited and not the Noise protocol itself.
-22. **No invitation expiry or revocation flow** beyond creating a new invitation or using
-    *Forget partner*.
-23. **File names are sanitized and storage paths are app-owned**, but file content is not
+23. **No invitation expiry or revocation flow** beyond creating a new invitation or using
+    *Unpair device*.
+24. **File names are sanitized and storage paths are app-owned**, but file content is not
     scanned for malware; opening a received file is the user’s decision.
-24. **Metadata is visible to the network**: DHT nodes, UDP trackers, STUN servers and the peer
-    see your public IP/port while the app is open.
+25. **Metadata is visible to the network**: DHT nodes, UDP trackers, STUN servers and the active
+    peer see your public IP/port while the engine is running.
 
 ## Verification
 
-25. **No physical-device or emulator testing has been performed in this environment.** The
+26. **No physical-device or emulator testing has been performed in this environment.** The
     app compiles, its JVM test suite passes, and the APKs are built and signature-verified,
-    but invitation scanning, on-device UI, two-phone connectivity, large-file resume and the
-    notification flows must be exercised by the user. `docs/TESTING.md` contains the matrix to
-    record those results.
+    but invitation scanning, tab and theme behavior, two-phone connectivity, large-file resume
+    and the notification flows must be exercised by the user. `docs/TESTING.md` contains the
+    matrix to record those results.

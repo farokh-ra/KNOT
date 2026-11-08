@@ -134,11 +134,15 @@ class FileTransferManager(
     @Volatile
     private var outgoingLink: PeerLink? = null
 
+    @Volatile
+    private var activeContactId: String? = null
+
     /**
      * Inserts the outgoing file message and starts sending as soon as a link is ready.
      * Returns null only when the source cannot be read at all.
      */
     suspend fun enqueueFile(
+        contactId: String,
         uri: Uri,
         displayName: String,
         mimeType: String,
@@ -150,7 +154,7 @@ class FileTransferManager(
         val safeName = AppCodec.sanitizeFileName(displayName) ?: "file"
         val safeMime = AppCodec.sanitizeMimeType(mimeType)
         val now = System.currentTimeMillis()
-        val sequence = repository.nextSequence()
+        val sequence = repository.nextSequence(contactId)
         val messageId = Hex.encode(Crypto.randomBytes(Protocol.MESSAGE_ID_BYTES))
         val transferId = Hex.encode(Crypto.randomBytes(Protocol.TRANSFER_ID_BYTES))
 
@@ -170,6 +174,7 @@ class FileTransferManager(
         }
 
         val message = repository.insertOutgoingFile(
+            contactId = contactId,
             id = messageId,
             transferId = transferId,
             fileName = safeName,
@@ -186,9 +191,10 @@ class FileTransferManager(
     }
 
     /** Called when a direct link becomes ready. Resumes every queued outgoing file. */
-    fun onLinkReady(link: PeerLink) {
+    fun onLinkReady(link: PeerLink, contactId: String) {
         synchronized(linkLock) {
             activeLink = link
+            activeContactId = contactId
             startSendingLocked(link)
         }
     }
@@ -210,6 +216,7 @@ class FileTransferManager(
     }
 
     private fun startSendingLocked(link: PeerLink) {
+        val contactId = activeContactId ?: return
         val running = outgoingJob
         if (running?.isActive == true) {
             if (outgoingLink === link) return
@@ -219,7 +226,7 @@ class FileTransferManager(
         outgoingJob = scope.launch {
             try {
                 while (link.isReady) {
-                    val next = repository.pendingFileOutgoing()
+                    val next = repository.pendingFileOutgoing(contactId)
                         .firstOrNull { it.state != MessageState.FAILED }
                     if (next == null) {
                         // Stay alive so a file enqueued just after the queue looked empty still
@@ -332,7 +339,7 @@ class FileTransferManager(
             while (link.isReady) {
                 val now = System.currentTimeMillis()
                 if (now - lastPriorityCheck > TEXT_PRIORITY_CHECK_MS) {
-                    textWaiting = repository.pendingTextOutgoing().isNotEmpty()
+                    textWaiting = repository.pendingTextOutgoing(message.contactId).isNotEmpty()
                     lastPriorityCheck = now
                 }
                 if (textWaiting) {
@@ -440,9 +447,9 @@ class FileTransferManager(
      * Handles an application message. The engine calls this from one serial worker, so file
      * blocks are written in exactly the order the reliable transport delivered them.
      */
-    suspend fun handle(message: AppMessage, link: PeerLink?) {
+    suspend fun handle(contactId: String, message: AppMessage, link: PeerLink?) {
         when (message) {
-            is AppMessage.FileOffer -> incomingMutex.withLock { handleOffer(message, link) }
+            is AppMessage.FileOffer -> incomingMutex.withLock { handleOffer(contactId, message, link) }
             is AppMessage.FileData -> incomingMutex.withLock { handleData(message, link) }
             is AppMessage.FileEnd -> incomingMutex.withLock { handleEnd(message, link) }
             is AppMessage.FileAck -> handleAck(message)
@@ -527,7 +534,7 @@ class FileTransferManager(
         }
     }
 
-    private suspend fun handleOffer(offer: AppMessage.FileOffer, link: PeerLink?) {
+    private suspend fun handleOffer(contactId: String, offer: AppMessage.FileOffer, link: PeerLink?) {
         val transferId = Hex.encode(offer.transferId)
         if (offer.totalBytes > Protocol.MAX_FILE_BYTES) {
             link?.sendApplicationMessage(
@@ -560,6 +567,7 @@ class FileTransferManager(
                 return
             }
             repository.insertIncomingFile(
+                contactId = contactId,
                 id = Hex.encode(offer.messageId),
                 transferId = transferId,
                 fileName = offer.fileName,
@@ -567,7 +575,7 @@ class FileTransferManager(
                 size = offer.totalBytes,
                 createdAt = offer.createdAt,
                 sequence = offer.sequence,
-                senderId = repository.peer()?.deviceId ?: "peer"
+                senderId = repository.contact(contactId)?.deviceId ?: "peer"
             )
             message = repository.fileMessageByTransferId(transferId)
             if (message == null) {

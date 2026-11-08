@@ -15,9 +15,9 @@ import javax.crypto.spec.GCMParameterSpec
 /**
  * Secrets at rest.
  *
- * The long-term X25519 identity key and the invitation secret are wrapped with an AES-256
- * key that lives in the Android Keystore and is not exportable. The wrapped blobs are kept
- * in private SharedPreferences. Nothing secret is ever logged.
+ * The long-term X25519 identity key and each contact's invitation secret are wrapped with an
+ * AES-256 key that lives in the Android Keystore and is not exportable. The wrapped blobs are
+ * kept in private SharedPreferences. Nothing secret is ever logged.
  */
 class SecureStore(context: Context) {
 
@@ -56,18 +56,40 @@ class SecureStore(context: Context) {
         return privateKey
     }
 
-    fun inviteSecret(): ByteArray? {
-        val wrapped = prefs.getString(KEY_INVITE, null) ?: return null
+    /** Invitation secret for one locally stored contact. */
+    fun inviteSecret(contactId: String): ByteArray? {
+        val wrapped = prefs.getString(inviteKey(contactId), null) ?: return null
         return unwrap(wrapped)?.takeIf { it.size == INVITE_BYTES }
     }
 
-    fun saveInviteSecret(secret: ByteArray?) {
+    fun saveInviteSecret(contactId: String, secret: ByteArray?) {
         if (secret == null) {
-            prefs.edit().remove(KEY_INVITE).apply()
+            prefs.edit().remove(inviteKey(contactId)).apply()
         } else {
-            prefs.edit().putString(KEY_INVITE, wrap(secret)).apply()
+            prefs.edit().putString(inviteKey(contactId), wrap(secret)).apply()
         }
     }
+
+    /** Version 1 stored exactly one invitation under a fixed key. */
+    fun legacyInviteSecret(): ByteArray? {
+        val wrapped = prefs.getString(KEY_LEGACY_INVITE, null) ?: return null
+        return unwrap(wrapped)?.takeIf { it.size == INVITE_BYTES }
+    }
+
+    /** Re-keys the old single invitation onto the migrated contact and removes the old value. */
+    fun migrateLegacyInvite(contactId: String) {
+        val wrapped = prefs.getString(KEY_LEGACY_INVITE, null) ?: return
+        prefs.edit()
+            .putString(inviteKey(contactId), wrapped)
+            .remove(KEY_LEGACY_INVITE)
+            .apply()
+    }
+
+    fun clearLegacyInvite() {
+        prefs.edit().remove(KEY_LEGACY_INVITE).apply()
+    }
+
+    private fun inviteKey(contactId: String): String = "invite_$contactId"
 
     private fun wrappingKey(): SecretKey {
         val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
@@ -127,7 +149,7 @@ class SecureStore(context: Context) {
         private const val KEY_DEVICE_ID = "device_id"
         private const val KEY_IDENTITY_PRIVATE = "identity_private"
         private const val KEY_IDENTITY_PUBLIC = "identity_public"
-        private const val KEY_INVITE = "invite_secret"
+        private const val KEY_LEGACY_INVITE = "invite_secret"
         private const val DEVICE_ID_BYTES = 16
         private const val INVITE_BYTES = 32
         private const val IV_BYTES = 12

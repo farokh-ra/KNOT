@@ -17,7 +17,6 @@ import android.view.MenuItem
 import android.view.inputmethod.EditorInfo
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.core.view.isVisible
@@ -27,8 +26,8 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import dev.twoperson.messenger.App
 import dev.twoperson.messenger.R
+import dev.twoperson.messenger.data.Contact
 import dev.twoperson.messenger.data.Message
 import dev.twoperson.messenger.data.MessageDirection
 import dev.twoperson.messenger.data.MessageKind
@@ -39,25 +38,24 @@ import dev.twoperson.messenger.engine.ConnectionStatus
 import dev.twoperson.messenger.engine.DirectKind
 import dev.twoperson.messenger.protocol.AppCodec
 import dev.twoperson.messenger.protocol.Protocol
-import dev.twoperson.messenger.service.ConnectionService
 import dev.twoperson.messenger.service.MessageNotifications
-import dev.twoperson.messenger.util.AppVisibility
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.InputStream
 
-class ChatActivity : AppCompatActivity() {
+class ChatActivity : KnotActivity() {
 
     private lateinit var binding: ActivityChatBinding
     private lateinit var adapter: ChatAdapter
-    private val container get() = (application as App).container
+    private lateinit var contactId: String
+    private var currentContact: Contact? = null
 
     private var initialMessagesLoaded = false
     private var autoScrollTarget: Int? = null
     private var latestStatus = ConnectionStatus()
-    private var peerName: String? = null
+    private var finishing = false
 
     private val openFiles = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isNotEmpty()) queueFiles(uris)
@@ -81,6 +79,16 @@ class ChatActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val requested = intent?.getStringExtra(EXTRA_CONTACT_ID)
+            ?: savedInstanceState?.getString(KEY_CONTACT)
+            ?: container.repository.activeContact.value?.id
+        if (requested.isNullOrBlank()) {
+            Toast.makeText(this, R.string.chat_missing_contact, Toast.LENGTH_SHORT).show()
+            finish()
+            return
+        }
+        contactId = requested
+
         binding = ActivityChatBinding.inflate(layoutInflater)
         setContentView(binding.root)
         setSupportActionBar(binding.toolbar)
@@ -112,8 +120,47 @@ class ChatActivity : AppCompatActivity() {
         binding.buttonScrollBottom.setOnClickListener { scrollToBottom(smooth = true) }
 
         lifecycleScope.launch {
+            val selected = container.engine.selectContact(contactId)
+            if (!selected) {
+                if (!finishing) {
+                    finishing = true
+                    Toast.makeText(this@ChatActivity, R.string.chat_missing_contact, Toast.LENGTH_SHORT).show()
+                    finish()
+                }
+                return@launch
+            }
+            container.repository.refresh()
+            container.repository.markIncomingRead(contactId)
+            refreshTitle()
+        }
+
+        lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                launch { container.repository.messages.collect { renderMessages(it) } }
+                launch {
+                    container.repository.messages.collect { messages ->
+                        if (container.repository.activeContact.value?.id == contactId) {
+                            renderMessages(messages)
+                        }
+                    }
+                }
+                launch {
+                    container.repository.contacts.collect { contacts ->
+                        currentContact = contacts.firstOrNull { it.id == contactId }
+                        if (currentContact == null) {
+                            if (!finishing) {
+                                finishing = true
+                                Toast.makeText(
+                                    this@ChatActivity,
+                                    R.string.chat_missing_contact,
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                                finish()
+                            }
+                        } else {
+                            refreshTitle()
+                        }
+                    }
+                }
                 launch { container.engine.status.collect { renderStatus(it) } }
             }
         }
@@ -121,23 +168,43 @@ class ChatActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
-        AppVisibility.onActivityStarted()
-        if (container.engine.isConfigured()) ConnectionService.ensureRunning(this)
-        MessageNotifications.dismissIncoming(this)
+        if (!::contactId.isInitialized) return
+        MessageNotifications.dismissIncoming(this, contactId)
         lifecycleScope.launch {
-            container.repository.markIncomingRead()
-            refreshPeerTitle()
+            container.repository.markIncomingRead(contactId)
+            refreshTitle()
         }
-    }
-
-    override fun onStop() {
-        AppVisibility.onActivityStopped()
-        super.onStop()
     }
 
     override fun onResume() {
         super.onResume()
-        lifecycleScope.launch { refreshPeerTitle() }
+        if (!::binding.isInitialized) return
+        lifecycleScope.launch {
+            container.repository.refresh()
+            refreshTitle()
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        val nextId = intent.getStringExtra(EXTRA_CONTACT_ID) ?: return
+        if (nextId == contactId) {
+            MessageNotifications.dismissIncoming(this, contactId)
+            lifecycleScope.launch {
+                container.repository.markIncomingRead(contactId)
+                refreshTitle()
+            }
+            return
+        }
+        val restart = Intent(this, ChatActivity::class.java)
+            .putExtra(EXTRA_CONTACT_ID, nextId)
+        finish()
+        startActivity(restart)
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        if (::contactId.isInitialized) outState.putString(KEY_CONTACT, contactId)
+        super.onSaveInstanceState(outState)
     }
 
     override fun onSupportNavigateUp(): Boolean {
@@ -151,6 +218,14 @@ class ChatActivity : AppCompatActivity() {
     }
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean = when (item.itemId) {
+        R.id.actionContactInfo -> {
+            startActivity(
+                Intent(this, ContactDetailActivity::class.java)
+                    .putExtra(ContactDetailActivity.EXTRA_CONTACT_ID, contactId)
+            )
+            true
+        }
+
         R.id.actionClear -> {
             confirmClear()
             true
@@ -179,8 +254,8 @@ class ChatActivity : AppCompatActivity() {
 
         if (messages.any { it.direction == MessageDirection.INCOMING && !it.isRead }) {
             lifecycleScope.launch {
-                container.repository.markIncomingRead()
-                MessageNotifications.dismissIncoming(this@ChatActivity)
+                container.repository.markIncomingRead(contactId)
+                MessageNotifications.dismissIncoming(this@ChatActivity, contactId)
             }
         }
     }
@@ -219,7 +294,7 @@ class ChatActivity : AppCompatActivity() {
             binding.inputMessageLayout.error = getString(R.string.chat_too_long)
             return
         }
-        if (!container.engine.isConfigured()) {
+        if (!canSend()) {
             binding.inputMessageLayout.error = getString(R.string.chat_not_paired)
             return
         }
@@ -235,8 +310,12 @@ class ChatActivity : AppCompatActivity() {
         }
     }
 
+    private fun canSend(): Boolean =
+        currentContact?.hasInvitation == true &&
+            container.repository.activeContact.value?.id == contactId
+
     private fun pickFiles() {
-        if (!container.engine.isConfigured()) {
+        if (!canSend()) {
             Toast.makeText(this, R.string.chat_not_paired, Toast.LENGTH_SHORT).show()
             return
         }
@@ -565,12 +644,11 @@ class ChatActivity : AppCompatActivity() {
         }
     }
 
-    private suspend fun refreshPeerTitle() {
-        val peer = container.repository.peer()
-        peerName = peer?.label?.takeIf { it.isNotBlank() }
-            ?: peer?.displayName?.takeIf { it.isNotBlank() }
-        supportActionBar?.title = peerName ?: getString(R.string.chat_title)
-        supportActionBar?.subtitle = statusSubtitle(latestStatus)
+    private fun refreshTitle() {
+        val contact = currentContact
+        supportActionBar?.title = contact?.name ?: getString(R.string.chat_title)
+        val active = container.repository.activeContact.value?.id == contactId
+        supportActionBar?.subtitle = if (active) statusSubtitle(latestStatus) else null
     }
 
     /**
@@ -587,13 +665,13 @@ class ChatActivity : AppCompatActivity() {
     private fun renderStatus(status: ConnectionStatus) {
         latestStatus = status
         updateKeepScreenOn()
-        supportActionBar?.subtitle = statusSubtitle(status)
-        if (peerName == null) {
-            status.peerName?.takeIf { it.isNotBlank() }?.let {
-                supportActionBar?.title = it
-            }
-        }
+        refreshTitle()
 
+        val active = container.repository.activeContact.value?.id == contactId
+        if (!active) {
+            binding.cardBanner.isVisible = false
+            return
+        }
         when (status.state) {
             ConnectionState.CONNECTED -> {
                 binding.cardBanner.isVisible = false
@@ -619,21 +697,8 @@ class ChatActivity : AppCompatActivity() {
         }
     }
 
-    private fun statusSubtitle(status: ConnectionStatus): String? = when (status.state) {
-        ConnectionState.CONNECTED -> getString(
-            if (status.direct == DirectKind.LOCAL_NETWORK) {
-                R.string.state_connected_lan
-            } else {
-                R.string.state_connected_internet
-            }
-        )
-
-        ConnectionState.DISCOVERING, ConnectionState.CONNECTING -> getString(R.string.state_discovering)
-        ConnectionState.DISCONNECTED -> getString(R.string.state_disconnected)
-        ConnectionState.UNABLE_TO_CONNECT -> getString(R.string.state_unable)
-        ConnectionState.NOT_PAIRED -> getString(R.string.state_not_paired)
-        ConnectionState.IDLE -> getString(R.string.state_idle)
-    }
+    private fun statusSubtitle(status: ConnectionStatus): String =
+        getString(StatusUi.of(status).label)
 
     private fun confirmClear() {
         MaterialAlertDialogBuilder(this)
@@ -641,10 +706,15 @@ class ChatActivity : AppCompatActivity() {
             .setMessage(R.string.chat_clear_confirm_message)
             .setNegativeButton(R.string.cancel, null)
             .setPositiveButton(R.string.chat_clear_confirm_ok) { _, _ ->
-                lifecycleScope.launch { container.engine.clearConversation() }
+                lifecycleScope.launch { container.engine.clearConversation(contactId) }
             }
             .show()
     }
 
     private data class FileMeta(val name: String, val mime: String, val size: Long)
+
+    companion object {
+        const val EXTRA_CONTACT_ID = "contact_id"
+        private const val KEY_CONTACT = "contact_id_state"
+    }
 }

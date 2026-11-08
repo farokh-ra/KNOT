@@ -9,46 +9,248 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import java.util.UUID
 
 /**
- * All message persistence. Reads and writes happen on the IO dispatcher; the UI observes a
- * single StateFlow of the conversation in deterministic display order.
+ * All contact and message persistence. Reads and writes happen on the IO dispatcher; the UI
+ * observes one StateFlow for the selected conversation plus a summary list for the Chats tab.
+ *
+ * Because a Knot conversation is always one-to-one, a contact is the conversation. Only one
+ * contact is selected at a time, and the connection engine follows that selection.
  */
 class MessageRepository(private val db: Db) {
 
     private val lock = Mutex()
+
+    private val _contacts = MutableStateFlow<List<Contact>>(emptyList())
+    val contacts: StateFlow<List<Contact>> = _contacts.asStateFlow()
+
+    private val _activeContact = MutableStateFlow<Contact?>(null)
+    val activeContact: StateFlow<Contact?> = _activeContact.asStateFlow()
+
+    private val _chats = MutableStateFlow<List<ChatSummary>>(emptyList())
+    val chats: StateFlow<List<ChatSummary>> = _chats.asStateFlow()
+
     private val _messages = MutableStateFlow<List<Message>>(emptyList())
     val messages: StateFlow<List<Message>> = _messages.asStateFlow()
 
     private val _unreadCount = MutableStateFlow(0)
     val unreadCount: StateFlow<Int> = _unreadCount.asStateFlow()
 
+    private val _totalUnread = MutableStateFlow(0)
+    val totalUnread: StateFlow<Int> = _totalUnread.asStateFlow()
+
+    suspend fun initialize() = withContext(Dispatchers.IO) {
+        lock.withLock { refreshLocked() }
+    }
+
     suspend fun refresh() = withContext(Dispatchers.IO) {
         lock.withLock { refreshLocked() }
     }
 
-    suspend fun insertOutgoing(id: String, body: String, createdAt: Long, sequence: Long): Message =
+    // ---------------------------------------------------------------------
+    // Contacts and the selected conversation
+    // ---------------------------------------------------------------------
+
+    suspend fun activeContactId(): String? = withContext(Dispatchers.IO) {
+        _activeContact.value?.id
+    }
+
+    suspend fun contact(id: String): Contact? = withContext(Dispatchers.IO) {
+        lock.withLock { queryContactLocked(id) }
+    }
+
+    suspend fun addContact(label: String?, note: String? = null): Contact =
         withContext(Dispatchers.IO) {
             lock.withLock {
-                insertMessageLocked(
-                    id = id,
-                    direction = MessageDirection.OUTGOING,
-                    body = body,
-                    createdAt = createdAt,
-                    sequence = sequence,
-                    state = MessageState.PENDING,
-                    senderId = "local",
-                    kind = MessageKind.TEXT,
-                    isRead = true
+                val now = System.currentTimeMillis()
+                val id = UUID.randomUUID().toString().replace("-", "")
+                val values = ContentValues().apply {
+                    put("id", id)
+                    put("label", ContactNames.sanitizeLabel(label))
+                    put("note", ContactNames.sanitizeNote(note))
+                    put("paired_at", 0L)
+                    put("created_at", now)
+                    put("last_opened_at", 0L)
+                    put("has_invitation", 0)
+                }
+                db.writableDatabase.insertWithOnConflict(
+                    "contacts", null, values, android.database.sqlite.SQLiteDatabase.CONFLICT_IGNORE
                 )
+                refreshLocked()
+                queryContactLocked(id) ?: Contact(id = id, createdAt = now)
             }
         }
 
-    /**
-     * Inserts an outgoing file message. The file itself stays at [fileUri] (a persisted SAF
-     * URI) or, when a provider cannot report a size, at [filePath] in app storage.
-     */
+    suspend fun updateContact(id: String, label: String?, note: String? = null) =
+        withContext(Dispatchers.IO) {
+            lock.withLock {
+                val values = ContentValues().apply {
+                    put("label", ContactNames.sanitizeLabel(label))
+                    put("note", ContactNames.sanitizeNote(note))
+                }
+                db.writableDatabase.update("contacts", values, "id = ?", arrayOf(id))
+                refreshLocked()
+            }
+        }
+
+    /** Creates the contact that carries a version-1 single-peer history. */
+    suspend fun ensureLegacyContact(label: String = "My contact"): String =
+        withContext(Dispatchers.IO) {
+            lock.withLock {
+                val existing = queryContactLocked(Db.LEGACY_CONTACT_ID)
+                if (existing != null) return@withLock existing.id
+                val now = System.currentTimeMillis()
+                val values = ContentValues().apply {
+                    put("id", Db.LEGACY_CONTACT_ID)
+                    put("label", label)
+                    put("created_at", now)
+                    put("last_opened_at", now)
+                    put("paired_at", 0L)
+                    put("has_invitation", 0)
+                }
+                db.writableDatabase.insertWithOnConflict(
+                    "contacts", null, values, android.database.sqlite.SQLiteDatabase.CONFLICT_IGNORE
+                )
+                refreshLocked()
+                Db.LEGACY_CONTACT_ID
+            }
+        }
+
+    suspend fun markInvitation(id: String, hasInvitation: Boolean) =
+        withContext(Dispatchers.IO) {
+            lock.withLock {
+                val values = ContentValues().apply {
+                    put("has_invitation", if (hasInvitation) 1 else 0)
+                }
+                db.writableDatabase.update("contacts", values, "id = ?", arrayOf(id))
+                refreshLocked()
+            }
+        }
+
+    /** A fresh invitation replaces the pinned identity but keeps the local history. */
+    suspend fun resetContactPairing(id: String) = withContext(Dispatchers.IO) {
+        lock.withLock {
+            val values = ContentValues().apply {
+                putNull("device_id")
+                putNull("public_key")
+                putNull("display_name")
+                put("paired_at", 0L)
+            }
+            db.writableDatabase.update("contacts", values, "id = ?", arrayOf(id))
+            refreshLocked()
+        }
+    }
+
+    /** Sets the selected conversation. Returns false for an unknown contact. */
+    suspend fun setActiveContact(id: String): Boolean = withContext(Dispatchers.IO) {
+        lock.withLock {
+            val contact = queryContactLocked(id) ?: return@withLock false
+            writeMetaLocked(Db.KEY_ACTIVE_CONTACT, contact.id)
+            val values = ContentValues().apply { put("last_opened_at", System.currentTimeMillis()) }
+            db.writableDatabase.update("contacts", values, "id = ?", arrayOf(contact.id))
+            refreshLocked()
+            true
+        }
+    }
+
+    suspend fun setActiveContactLabel(label: String?) = withContext(Dispatchers.IO) {
+        lock.withLock {
+            val active = _activeContact.value ?: return@withLock
+            val values = ContentValues().apply { put("label", ContactNames.sanitizeLabel(label)) }
+            db.writableDatabase.update("contacts", values, "id = ?", arrayOf(active.id))
+            refreshLocked()
+        }
+    }
+
+    suspend fun savePeer(
+        contactId: String,
+        deviceId: String?,
+        publicKeyHex: String?,
+        displayName: String?
+    ) = withContext(Dispatchers.IO) {
+        lock.withLock {
+            val existing = queryContactLocked(contactId) ?: return@withLock
+            val sameIdentity = when {
+                publicKeyHex != null && existing.publicKeyHex != null ->
+                    existing.publicKeyHex == publicKeyHex
+                deviceId != null && existing.deviceId != null -> existing.deviceId == deviceId
+                else -> true
+            }
+            val pairedAt = if (sameIdentity && existing.pairedAt > 0) {
+                existing.pairedAt
+            } else {
+                System.currentTimeMillis()
+            }
+            val values = ContentValues().apply {
+                if (deviceId != null) put("device_id", deviceId)
+                if (publicKeyHex != null) put("public_key", publicKeyHex)
+                if (displayName != null) put("display_name", displayName)
+                put("paired_at", pairedAt)
+                put("has_invitation", 1)
+            }
+            db.writableDatabase.update("contacts", values, "id = ?", arrayOf(contactId))
+            refreshLocked()
+        }
+    }
+
+    /** Deletes a contact and its history. Returns the rows so local files can be cleaned up. */
+    suspend fun deleteContact(id: String): List<Message> = withContext(Dispatchers.IO) {
+        lock.withLock {
+            val removed = queryMessagesLocked(id)
+            db.writableDatabase.delete("messages", "contact_id = ?", arrayOf(id))
+            db.writableDatabase.delete("contacts", "id = ?", arrayOf(id))
+            if (_activeContact.value?.id == id) {
+                db.writableDatabase.delete(
+                    "meta", "key = ?", arrayOf(Db.KEY_ACTIVE_CONTACT)
+                )
+            }
+            refreshLocked()
+            removed
+        }
+    }
+
+    /** Deletes every contact and all history. Returns the removed rows for file cleanup. */
+    suspend fun deleteAllContacts(): List<Message> = withContext(Dispatchers.IO) {
+        lock.withLock {
+            val removed = query(null)
+            db.writableDatabase.delete("messages", null, null)
+            db.writableDatabase.delete("contacts", null, null)
+            db.writableDatabase.delete("meta", "key = ?", arrayOf(Db.KEY_ACTIVE_CONTACT))
+            refreshLocked()
+            removed
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // Messages
+    // ---------------------------------------------------------------------
+
+    suspend fun insertOutgoing(
+        contactId: String,
+        id: String,
+        body: String,
+        createdAt: Long,
+        sequence: Long
+    ): Message = withContext(Dispatchers.IO) {
+        lock.withLock {
+            insertMessageLocked(
+                contactId = contactId,
+                id = id,
+                direction = MessageDirection.OUTGOING,
+                body = body,
+                createdAt = createdAt,
+                sequence = sequence,
+                state = MessageState.PENDING,
+                senderId = "local",
+                kind = MessageKind.TEXT,
+                isRead = true
+            )
+        }
+    }
+
     suspend fun insertOutgoingFile(
+        contactId: String,
         id: String,
         transferId: String,
         fileName: String,
@@ -61,6 +263,7 @@ class MessageRepository(private val db: Db) {
     ): Message = withContext(Dispatchers.IO) {
         lock.withLock {
             insertMessageLocked(
+                contactId = contactId,
                 id = id,
                 direction = MessageDirection.OUTGOING,
                 body = fileName,
@@ -82,6 +285,7 @@ class MessageRepository(private val db: Db) {
 
     /** Returns true when the message was new; false for a duplicate delivery. */
     suspend fun insertIncoming(
+        contactId: String,
         id: String,
         body: String,
         createdAt: Long,
@@ -90,6 +294,7 @@ class MessageRepository(private val db: Db) {
     ): Boolean = withContext(Dispatchers.IO) {
         lock.withLock {
             insertIncomingLocked(
+                contactId = contactId,
                 id = id,
                 body = body,
                 createdAt = createdAt,
@@ -104,8 +309,8 @@ class MessageRepository(private val db: Db) {
         }
     }
 
-    /** Inserts the visible placeholder for an incoming file. Completion updates the same row. */
     suspend fun insertIncomingFile(
+        contactId: String,
         id: String,
         transferId: String,
         fileName: String,
@@ -117,6 +322,7 @@ class MessageRepository(private val db: Db) {
     ): Boolean = withContext(Dispatchers.IO) {
         lock.withLock {
             insertIncomingLocked(
+                contactId = contactId,
                 id = id,
                 body = fileName,
                 createdAt = createdAt,
@@ -293,23 +499,29 @@ class MessageRepository(private val db: Db) {
         }
     }
 
-    suspend fun pendingOutgoing(): List<Message> = withContext(Dispatchers.IO) {
+    suspend fun pendingOutgoing(contactId: String): List<Message> = withContext(Dispatchers.IO) {
         query(
-            "direction = ${MessageDirection.OUTGOING.ordinal} AND state < ${MessageState.DELIVERED.ordinal}"
-        )
-    }
-
-    /** Small text messages: these are sent first, ahead of bulk file data. */
-    suspend fun pendingTextOutgoing(): List<Message> = withContext(Dispatchers.IO) {
-        query(
-            "direction = ${MessageDirection.OUTGOING.ordinal} AND kind = ${MessageKind.TEXT.ordinal}" +
+            "contact_id = ${quote(contactId)}" +
+                " AND direction = ${MessageDirection.OUTGOING.ordinal}" +
                 " AND state < ${MessageState.DELIVERED.ordinal}"
         )
     }
 
-    suspend fun pendingFileOutgoing(): List<Message> = withContext(Dispatchers.IO) {
+    /** Small text messages: these are sent first, ahead of bulk file data. */
+    suspend fun pendingTextOutgoing(contactId: String): List<Message> = withContext(Dispatchers.IO) {
         query(
-            "direction = ${MessageDirection.OUTGOING.ordinal} AND kind = ${MessageKind.FILE.ordinal}" +
+            "contact_id = ${quote(contactId)}" +
+                " AND direction = ${MessageDirection.OUTGOING.ordinal}" +
+                " AND kind = ${MessageKind.TEXT.ordinal}" +
+                " AND state < ${MessageState.DELIVERED.ordinal}"
+        )
+    }
+
+    suspend fun pendingFileOutgoing(contactId: String): List<Message> = withContext(Dispatchers.IO) {
+        query(
+            "contact_id = ${quote(contactId)}" +
+                " AND direction = ${MessageDirection.OUTGOING.ordinal}" +
+                " AND kind = ${MessageKind.FILE.ordinal}" +
                 " AND state < ${MessageState.DELIVERED.ordinal}"
         )
     }
@@ -327,13 +539,15 @@ class MessageRepository(private val db: Db) {
         messageByIdLocked(id)
     }
 
-    /** Marks queued messages as pending again after a reconnect so they are retried. */
-    suspend fun resetFailedToPending() = withContext(Dispatchers.IO) {
+    /** Marks queued messages in one conversation as pending again after a reconnect. */
+    suspend fun resetFailedToPending(contactId: String) = withContext(Dispatchers.IO) {
         lock.withLock {
             val values = ContentValues().apply { put("state", MessageState.PENDING.ordinal) }
             db.writableDatabase.update(
                 "messages", values,
-                "direction = ${MessageDirection.OUTGOING.ordinal} AND state = ${MessageState.FAILED.ordinal}", null
+                "contact_id = ? AND direction = ${MessageDirection.OUTGOING.ordinal}" +
+                    " AND state = ${MessageState.FAILED.ordinal}",
+                arrayOf(contactId)
             )
             refreshLocked()
         }
@@ -343,136 +557,156 @@ class MessageRepository(private val db: Db) {
      * Marks undelivered outgoing messages as failed after the peer stopped acknowledging.
      * The text is never deleted: a later connection resets these to queued and retries them.
      */
-    suspend fun markUndeliveredAsFailed() = withContext(Dispatchers.IO) {
+    suspend fun markUndeliveredAsFailed(contactId: String) = withContext(Dispatchers.IO) {
         lock.withLock {
             val values = ContentValues().apply { put("state", MessageState.FAILED.ordinal) }
             db.writableDatabase.update(
                 "messages", values,
-                "direction = ${MessageDirection.OUTGOING.ordinal} AND state = ${MessageState.PENDING.ordinal}", null
+                "contact_id = ? AND direction = ${MessageDirection.OUTGOING.ordinal}" +
+                    " AND state = ${MessageState.PENDING.ordinal}",
+                arrayOf(contactId)
             )
             refreshLocked()
         }
     }
 
-    suspend fun nextSequence(): Long = withContext(Dispatchers.IO) {
+    suspend fun nextSequence(contactId: String): Long = withContext(Dispatchers.IO) {
         lock.withLock {
             val database = db.writableDatabase
-            val current = database.rawQuery("SELECT value FROM meta WHERE key = 'out_seq'", null).use { cursor ->
-                if (cursor.moveToFirst()) cursor.getString(0).toLongOrNull() ?: 0L else 0L
+            val key = "out_seq_$contactId"
+            val current = database.rawQuery(
+                "SELECT value FROM meta WHERE key = ?", arrayOf(key)
+            ).use { cursor ->
+                if (cursor.moveToFirst()) {
+                    cursor.getString(0).toLongOrNull() ?: 0L
+                } else if (contactId == Db.LEGACY_CONTACT_ID) {
+                    database.rawQuery(
+                        "SELECT value FROM meta WHERE key = 'out_seq'", null
+                    ).use { legacy ->
+                        if (legacy.moveToFirst()) legacy.getString(0).toLongOrNull() ?: 0L else 0L
+                    }
+                } else {
+                    0L
+                }
             }
             val next = current + 1
             val values = ContentValues().apply {
-                put("key", "out_seq")
+                put("key", key)
                 put("value", next.toString())
             }
-            database.insertWithOnConflict("meta", null, values, android.database.sqlite.SQLiteDatabase.CONFLICT_REPLACE)
+            database.insertWithOnConflict(
+                "meta", null, values, android.database.sqlite.SQLiteDatabase.CONFLICT_REPLACE
+            )
             next
         }
     }
 
-    suspend fun markIncomingRead() = withContext(Dispatchers.IO) {
+    suspend fun markIncomingRead(contactId: String) = withContext(Dispatchers.IO) {
         lock.withLock {
             val values = ContentValues().apply { put("is_read", 1) }
             db.writableDatabase.update(
                 "messages", values,
-                "direction = ${MessageDirection.INCOMING.ordinal} AND is_read = 0", null
+                "contact_id = ? AND direction = ${MessageDirection.INCOMING.ordinal} AND is_read = 0",
+                arrayOf(contactId)
             )
             refreshLocked()
         }
     }
 
-    /** Deletes the history and returns the removed rows so app-private files can be cleaned up. */
-    suspend fun clearConversation(): List<Message> = withContext(Dispatchers.IO) {
+    /** Deletes one conversation and returns the removed rows so files can be cleaned up. */
+    suspend fun clearConversation(contactId: String): List<Message> = withContext(Dispatchers.IO) {
         lock.withLock {
-            val removed = queryAll()
+            val removed = queryMessagesLocked(contactId)
+            db.writableDatabase.delete("messages", "contact_id = ?", arrayOf(contactId))
+            refreshLocked()
+            removed
+        }
+    }
+
+    /** Deletes every conversation but keeps contacts and pairings. */
+    suspend fun clearAllConversations(): List<Message> = withContext(Dispatchers.IO) {
+        lock.withLock {
+            val removed = query(null)
             db.writableDatabase.delete("messages", null, null)
             refreshLocked()
             removed
         }
     }
 
-    suspend fun peer(): PeerInfo? = withContext(Dispatchers.IO) {
-        db.readableDatabase.rawQuery("SELECT device_id, public_key, label, display_name, paired_at FROM peer WHERE id = 1", null)
-            .use { cursor ->
-                if (!cursor.moveToFirst()) return@use null
-                PeerInfo(
-                    deviceId = cursor.nullableString(0),
-                    publicKeyHex = cursor.nullableString(1),
-                    label = cursor.nullableString(2),
-                    displayName = cursor.nullableString(3),
-                    pairedAt = cursor.getLong(4)
-                )
-            }
+    // ---------------------------------------------------------------------
+    // Internals
+    // ---------------------------------------------------------------------
+
+    private fun refreshLocked() {
+        val contacts = queryContactsLocked()
+        val selected = _activeContact.value
+        val active = contacts.firstOrNull { it.id == selected?.id }
+            ?: contacts.maxByOrNull { maxOf(it.lastOpenedAt, it.pairedAt, it.createdAt) }
+        if (active != null) {
+            if (selected?.id != active.id) writeMetaLocked(Db.KEY_ACTIVE_CONTACT, active.id)
+        } else {
+            db.writableDatabase.delete("meta", "key = ?", arrayOf(Db.KEY_ACTIVE_CONTACT))
+        }
+        _activeContact.value = active
+        _contacts.value = contacts
+        _messages.value = active?.let { queryMessagesLocked(it.id) } ?: emptyList()
+        _unreadCount.value = active?.let { queryUnreadCountLocked(it.id) } ?: 0
+        _chats.value = buildChatsLocked(contacts)
+        _totalUnread.value = queryTotalUnreadLocked()
     }
 
-    suspend fun savePeer(deviceId: String?, publicKeyHex: String?, displayName: String?) = withContext(Dispatchers.IO) {
-        lock.withLock {
-            val existing = db.readableDatabase.rawQuery(
-                "SELECT label, public_key, device_id, paired_at FROM peer WHERE id = 1",
+    private fun buildChatsLocked(contacts: List<Contact>): List<ChatSummary> =
+        contacts.mapNotNull { contact ->
+            val last = queryLastMessageLocked(contact.id)
+            val unread = queryUnreadCountLocked(contact.id)
+            if (last == null && !contact.isOnKnot) {
                 null
-            ).use { cursor ->
-                if (!cursor.moveToFirst()) {
-                    null
-                } else {
-                    PeerRow(
-                        label = cursor.nullableString(0),
-                        publicKeyHex = cursor.nullableString(1),
-                        deviceId = cursor.nullableString(2),
-                        pairedAt = cursor.getLong(3)
-                    )
-                }
-            }
-            // Hello arrives on every reconnect. Keep the date the pair was first established
-            // unless the identity itself changed (a re-pair), in which case it is a new pair.
-            val sameIdentity = when {
-                existing == null -> true
-                publicKeyHex != null && existing.publicKeyHex != null ->
-                    existing.publicKeyHex == publicKeyHex
-                deviceId != null && existing.deviceId != null -> existing.deviceId == deviceId
-                else -> true
-            }
-            val pairedAt = if (existing != null && sameIdentity && existing.pairedAt > 0) {
-                existing.pairedAt
             } else {
-                System.currentTimeMillis()
+                ChatSummary(contact, last, unread)
             }
-            val values = ContentValues().apply {
-                put("id", 1)
-                if (deviceId != null) put("device_id", deviceId)
-                if (publicKeyHex != null) put("public_key", publicKeyHex)
-                if (displayName != null) put("display_name", displayName)
-                if (sameIdentity && existing?.label != null) put("label", existing.label)
-                put("paired_at", pairedAt)
-            }
-            db.writableDatabase.insertWithOnConflict("peer", null, values, android.database.sqlite.SQLiteDatabase.CONFLICT_REPLACE)
+        }.sortedByDescending { it.sortTime }
+
+    private fun queryContactsLocked(): List<Contact> {
+        val result = ArrayList<Contact>()
+        db.readableDatabase.rawQuery(
+            """
+            SELECT id, label, note, device_id, public_key, display_name,
+                   paired_at, created_at, last_opened_at, has_invitation
+            FROM contacts
+            ORDER BY last_opened_at DESC, created_at DESC
+            """.trimIndent(),
+            null
+        ).use { cursor ->
+            while (cursor.moveToNext()) result.add(cursor.toContact())
         }
+        return result
     }
 
-    /** Stores a friendly name even before the first connection created a peer row. */
-    suspend fun setPeerLabel(label: String?) = withContext(Dispatchers.IO) {
-        lock.withLock {
-            val values = ContentValues().apply { put("label", label) }
-            val updated = db.writableDatabase.update("peer", values, "id = 1", null)
-            if (updated == 0) {
-                val inserted = ContentValues().apply {
-                    put("id", 1)
-                    put("label", label)
-                    put("paired_at", 0L)
-                }
-                db.writableDatabase.insertWithOnConflict(
-                    "peer", null, inserted, android.database.sqlite.SQLiteDatabase.CONFLICT_IGNORE
-                )
-            }
-        }
-    }
+    private fun queryContactLocked(id: String): Contact? =
+        db.readableDatabase.rawQuery(
+            """
+            SELECT id, label, note, device_id, public_key, display_name,
+                   paired_at, created_at, last_opened_at, has_invitation
+            FROM contacts WHERE id = ? LIMIT 1
+            """.trimIndent(),
+            arrayOf(id)
+        ).use { cursor -> if (cursor.moveToFirst()) cursor.toContact() else null }
 
-    suspend fun clearPeer() = withContext(Dispatchers.IO) {
-        lock.withLock {
-            db.writableDatabase.delete("peer", null, null)
-        }
-    }
+    private fun Cursor.toContact(): Contact = Contact(
+        id = getString(0),
+        label = nullableString(1),
+        note = nullableString(2),
+        deviceId = nullableString(3),
+        publicKeyHex = nullableString(4),
+        displayName = nullableString(5),
+        pairedAt = getLong(6),
+        createdAt = getLong(7),
+        lastOpenedAt = getLong(8),
+        hasInvitation = getInt(9) != 0
+    )
 
     private fun insertMessageLocked(
+        contactId: String,
         id: String,
         direction: MessageDirection,
         body: String,
@@ -493,6 +727,7 @@ class MessageRepository(private val db: Db) {
     ): Message {
         val values = ContentValues().apply {
             put("id", id)
+            put("contact_id", contactId)
             put("direction", direction.ordinal)
             put("body", body)
             put("created_at", createdAt)
@@ -515,13 +750,29 @@ class MessageRepository(private val db: Db) {
         )
         refreshLocked()
         return Message(
-            id, direction, body, createdAt, sequence, state, senderId, kind,
-            fileName, mimeType, fileSize, fileUri, filePath, transferId, receivedBytes,
-            transferDigest, isRead
+            id = id,
+            contactId = contactId,
+            direction = direction,
+            body = body,
+            createdAt = createdAt,
+            sequence = sequence,
+            state = state,
+            senderId = senderId,
+            kind = kind,
+            fileName = fileName,
+            mimeType = mimeType,
+            fileSize = fileSize,
+            fileUri = fileUri,
+            filePath = filePath,
+            transferId = transferId,
+            receivedBytes = receivedBytes,
+            transferDigest = transferDigest,
+            isRead = isRead
         )
     }
 
     private fun insertIncomingLocked(
+        contactId: String,
         id: String,
         body: String,
         createdAt: Long,
@@ -535,6 +786,7 @@ class MessageRepository(private val db: Db) {
     ): Boolean {
         val values = ContentValues().apply {
             put("id", id)
+            put("contact_id", contactId)
             put("direction", MessageDirection.INCOMING.ordinal)
             put("body", body)
             put("created_at", createdAt)
@@ -557,33 +809,53 @@ class MessageRepository(private val db: Db) {
         return row >= 0
     }
 
-    private fun refreshLocked() {
-        _messages.value = queryAll()
-        _unreadCount.value = queryUnreadCount()
+    private fun writeMetaLocked(key: String, value: String) {
+        val values = ContentValues().apply {
+            put("key", key)
+            put("value", value)
+        }
+        db.writableDatabase.insertWithOnConflict(
+            "meta", null, values, android.database.sqlite.SQLiteDatabase.CONFLICT_REPLACE
+        )
     }
 
-    private fun queryAll(): List<Message> = query(null)
-
-    private fun queryUnreadCount(): Int =
+    private fun queryUnreadCountLocked(contactId: String): Int =
         db.readableDatabase.rawQuery(
-            "SELECT COUNT(*) FROM messages WHERE direction = ${MessageDirection.INCOMING.ordinal} AND is_read = 0",
+            "SELECT COUNT(*) FROM messages WHERE contact_id = ?" +
+                " AND direction = ${MessageDirection.INCOMING.ordinal} AND is_read = 0",
+            arrayOf(contactId)
+        ).use { cursor -> if (cursor.moveToFirst()) cursor.getInt(0) else 0 }
+
+    private fun queryTotalUnreadLocked(): Int =
+        db.readableDatabase.rawQuery(
+            "SELECT COUNT(*) FROM messages WHERE direction = ${MessageDirection.INCOMING.ordinal}" +
+                " AND is_read = 0",
             null
         ).use { cursor -> if (cursor.moveToFirst()) cursor.getInt(0) else 0 }
 
-    private fun messageByIdLocked(id: String): Message? = queryAll().firstOrNull { it.id == id }
+    private fun messageByIdLocked(id: String): Message? {
+        val cursor = db.readableDatabase.rawQuery(
+            "$SELECT_MESSAGES WHERE id = ? LIMIT 1",
+            arrayOf(id)
+        )
+        return cursor.use { if (it.moveToFirst()) it.toMessage() else null }
+    }
 
-    private fun dbFileSizeLocked(id: String): Long =
-        db.readableDatabase.rawQuery("SELECT file_size FROM messages WHERE id = ?", arrayOf(id)).use {
-            if (it.moveToFirst()) it.getLong(0) else 0L
-        }
+    private fun queryMessagesLocked(contactId: String): List<Message> =
+        query("contact_id = ${quote(contactId)}")
+
+    private fun queryLastMessageLocked(contactId: String): Message? {
+        val cursor = db.readableDatabase.rawQuery(
+            "$SELECT_MESSAGES WHERE contact_id = ? ORDER BY created_at DESC, sender_id DESC, id DESC LIMIT 1",
+            arrayOf(contactId)
+        )
+        return cursor.use { if (it.moveToFirst()) it.toMessage() else null }
+    }
 
     private fun query(where: String?): List<Message> {
         val cursor: Cursor = db.readableDatabase.rawQuery(
             """
-            SELECT id, direction, body, created_at, seq, state, sender_id,
-                   kind, file_name, mime_type, file_size, file_uri, file_path,
-                   transfer_id, received_bytes, transfer_digest, is_read
-            FROM messages
+            $SELECT_MESSAGES
             ${if (where != null) "WHERE $where" else ""}
             ORDER BY created_at ASC, sender_id ASC, id ASC
             """.trimIndent(),
@@ -591,40 +863,52 @@ class MessageRepository(private val db: Db) {
         )
         val result = ArrayList<Message>()
         cursor.use {
-            while (it.moveToNext()) {
-                result.add(
-                    Message(
-                        id = it.getString(0),
-                        direction = if (it.getInt(1) == MessageDirection.OUTGOING.ordinal) MessageDirection.OUTGOING else MessageDirection.INCOMING,
-                        body = it.getString(2),
-                        createdAt = it.getLong(3),
-                        sequence = it.getLong(4),
-                        state = MessageState.values().getOrElse(it.getInt(5)) { MessageState.PENDING },
-                        senderId = it.getString(6),
-                        kind = MessageKind.values().getOrElse(it.getInt(7)) { MessageKind.TEXT },
-                        fileName = it.nullableString(8),
-                        mimeType = it.nullableString(9),
-                        fileSize = it.getLong(10),
-                        fileUri = it.nullableString(11),
-                        filePath = it.nullableString(12),
-                        transferId = it.nullableString(13),
-                        receivedBytes = it.getLong(14),
-                        transferDigest = it.getLong(15),
-                        isRead = it.getInt(16) != 0
-                    )
-                )
-            }
+            while (it.moveToNext()) result.add(it.toMessage())
         }
         return result
     }
 
-    private data class PeerRow(
-        val label: String?,
-        val publicKeyHex: String?,
-        val deviceId: String?,
-        val pairedAt: Long
+    private fun Cursor.toMessage(): Message = Message(
+        id = getString(0),
+        contactId = getString(1),
+        direction = if (getInt(2) == MessageDirection.OUTGOING.ordinal) {
+            MessageDirection.OUTGOING
+        } else {
+            MessageDirection.INCOMING
+        },
+        body = getString(3),
+        createdAt = getLong(4),
+        sequence = getLong(5),
+        state = MessageState.values().getOrElse(getInt(6)) { MessageState.PENDING },
+        senderId = getString(7),
+        kind = MessageKind.values().getOrElse(getInt(8)) { MessageKind.TEXT },
+        fileName = nullableString(9),
+        mimeType = nullableString(10),
+        fileSize = getLong(11),
+        fileUri = nullableString(12),
+        filePath = nullableString(13),
+        transferId = nullableString(14),
+        receivedBytes = getLong(15),
+        transferDigest = getLong(16),
+        isRead = getInt(17) != 0
     )
+
+    private fun dbFileSizeLocked(id: String): Long =
+        db.readableDatabase.rawQuery("SELECT file_size FROM messages WHERE id = ?", arrayOf(id)).use {
+            if (it.moveToFirst()) it.getLong(0) else 0L
+        }
+
+    private fun quote(value: String): String = "'${value.replace("'", "''")}'"
 
     private fun Cursor.nullableString(column: Int): String? =
         if (isNull(column)) null else getString(column)
+
+    companion object {
+        private const val SELECT_MESSAGES = """
+            SELECT id, contact_id, direction, body, created_at, seq, state, sender_id,
+                   kind, file_name, mime_type, file_size, file_uri, file_path,
+                   transfer_id, received_bytes, transfer_digest, is_read
+            FROM messages
+        """
+    }
 }

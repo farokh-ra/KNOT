@@ -9,9 +9,10 @@
         android:id="@+id/toolbar"
         android:layout_width="match_parent"
         android:layout_height="?attr/actionBarSize"
-        android:background="?attr/colorSurface"
+        android:background="@color/surface_background"
         android:elevation="1dp"
-        app:title="@string/chat_title" />
+        app:title="@string/chat_title"
+        app:titleTextAppearance="@style/TextAppearance.App.Title" />
 
     <com.google.android.material.card.MaterialCardView
         android:id="@+id/cardBanner"

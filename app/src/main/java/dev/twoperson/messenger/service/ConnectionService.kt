@@ -14,6 +14,7 @@ import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import dev.twoperson.messenger.App
 import dev.twoperson.messenger.R
+import dev.twoperson.messenger.data.SettingsPolicy
 import dev.twoperson.messenger.engine.ConnectionState
 import dev.twoperson.messenger.engine.ConnectionStatus
 import dev.twoperson.messenger.engine.DirectKind
@@ -42,19 +43,25 @@ class ConnectionService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    private val settings get() = (application as App).container.settings
+
     override fun onCreate() {
         super.onCreate()
         MessageNotifications.ensureChannels(this)
         engine.onForeground()
         statusJob = scope.launch {
             engine.status.collect { status ->
+                if (!engine.isConfigured()) {
+                    stopSelf()
+                    return@collect
+                }
                 if (foregroundStarted) publish(status)
             }
         }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (!engine.isConfigured()) {
+        if (!engine.isConfigured() || !settings.current.backgroundConnection) {
             stopSelf()
             return START_NOT_STICKY
         }
@@ -142,8 +149,29 @@ class ConnectionService : Service() {
     }
 
     companion object {
+        /**
+         * Applies the current settings: starts the opt-in foreground service only when the
+         * user asked for background connectivity and at least one contact is configured;
+         * otherwise stops it. Safe to call from every activity start and settings change.
+         */
+        fun sync(context: Context) {
+            val app = context.applicationContext as? App ?: return
+            val container = app.container
+            val run = SettingsPolicy.shouldRunBackgroundService(
+                container.settings.current.backgroundConnection,
+                container.engine.isConfigured()
+            )
+            if (run) ensureRunning(context) else stop(context)
+        }
+
         /** Idempotent: safe to call from every activity start. */
         fun ensureRunning(context: Context) {
+            val app = context.applicationContext as? App ?: return
+            val run = SettingsPolicy.shouldRunBackgroundService(
+                app.container.settings.current.backgroundConnection,
+                app.container.engine.isConfigured()
+            )
+            if (!run) return
             try {
                 ContextCompat.startForegroundService(
                     context,

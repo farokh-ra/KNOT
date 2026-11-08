@@ -32,8 +32,12 @@ without any server reading or storing them. The app assumes:
   copies live in `filesDir/outgoing`; part files live in `filesDir/transfers`. Opening or
   sharing uses a `FileProvider` read grant, not a file path.
 - **Privacy-aware notifications**: real message alerts use `VISIBILITY_PRIVATE` with a
-  redacted public version; the mandatory foreground-service notification is on a silent,
-  minimum-importance channel and never carries message text.
+  redacted public version and can hide all names and content through the preview switch. The
+  optional foreground-service notification is on a silent, minimum-importance channel and
+  never carries message text.
+- **Per-contact identities**: every contact has an independent invitation secret and pinned
+  static identity, so pairing one contact cannot authenticate or read another contact's thread.
+  The legacy single-peer identity is migrated to one `primary` contact on upgrade.
 - **Minimal disclosure to rendezvous services**: DHT nodes and UDP trackers learn only a
   derived 20-byte topic plus the observed IP/port; STUN servers only reflect the socket's
   public endpoint. The invitation secret is never sent to any of them.
@@ -46,7 +50,7 @@ without any server reading or storing them. The app assumes:
 - Pairing is trust-on-first-use: the invitation authenticates the pair, and the peer's static
   identity is pinned afterwards. If someone obtains the invitation before the intended person
   pairs, they can be the first peer.
-- Invitations do not expire. Replacing the invitation or using *Forget partner* is manual.
+- Invitations do not expire. Replacing the invitation or using *Unpair device* is manual.
 - Message history, transfer state, received files and cached outgoing copies are **not**
   encrypted at rest. They sit in plain SQLite and app-private storage inside the sandbox; the
   identity key and invitation secret are wrapped, but message text and file bytes are not.
@@ -59,8 +63,8 @@ without any server reading or storing them. The app assumes:
 - A notification listener or someone using an unlocked device may see sender names and message
   previews; the public lockscreen version is redacted but the private version is not.
 - No protection against a compromised device, screenshot malware, or a rooted phone.
-- Metadata: while the app is open, DHT nodes, UDP trackers, STUN servers and the other device
-  learn your public IP and UDP port. That is inherent to serverless rendezvous.
+- Metadata: while the engine is running, DHT nodes, UDP trackers, STUN servers and the active
+  peer learn your public IP and UDP port. That is inherent to serverless rendezvous.
 
 ## Checklist
 
@@ -70,7 +74,8 @@ without any server reading or storing them. The app assumes:
 | Raw invitation secret never published to rendezvous services | Done — only the HMAC-derived 20-byte topic reaches DHT nodes and trackers; STUN sees only the endpoint |
 | Peer proves possession of the invitation secret | Done — initiation MAC, verified in `HandshakeTest`; incoming initiations are MAC-checked before any state is created |
 | Tracker/STUN replies cannot spoof another endpoint | Done — transaction id and source address must match; STUN replies also require the full 12-byte transaction |
-| Remote peer identity authenticated | Done — identity key inside the MAC'd transcript; pinned after pairing |
+| Remote peer identity authenticated | Done — identity key inside the MAC'd transcript; pinned per contact after pairing |
+| Contacts isolated from each other | Done — independent invitation secret, pinned identity, outbox and history per contact; only the selected contact is connected |
 | Encrypted channel retained and verified | Done — AES-256-GCM, replay window, tamper tests |
 | No relay / TURN / message-forwarding fallback | Done — none exists in the code base |
 | Rendezvous services receive no message text | Done — DHT carries KRPC only; trackers see the topic hash and endpoint; STUN sees a binding request |
@@ -84,7 +89,8 @@ without any server reading or storing them. The app assumes:
 | File data cannot starve chat | Done — text outbox checked every 250 ms; file sender pauses while text waits |
 | File bytes stay on the authenticated peer path | Done — no relay or upload endpoint exists; all blocks use `PeerLink` |
 | Clearing history removes app-private file copies | Done — active sessions cancelled, part files deleted, row paths removed; SAF originals untouched |
-| Notifications only for real incoming content | Done — `AppVisibility` gate; service channel is silent and separate |
+| Notifications only for real incoming content | Done — `AppVisibility` gate; per-conversation IDs; optional service channel is silent and separate |
+| Local data excluded from backup and device transfer | Done — `allowBackup=false` plus `data_extraction_rules.xml` excludes every domain |
 | Notification permission handled without crashing | Done — requested only from the explicit enable button, never on launch; checks before every post; `SecurityException` caught |
 | Private keys never in logs or plain preferences | Done — Keystore-wrapped; no secret is logged |
 | No message content to analytics or crash reporting | Done — no analytics or crash SDK is included |
