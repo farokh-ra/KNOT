@@ -7,13 +7,13 @@ this repository and no hosted service operated for this app.
 
 | Layer | Files | Responsibility |
 |---|---|---|
-| UI | `ui/HomeActivity`, `ui/PairingActivity`, `ui/ChatActivity`, `ui/ChatAdapter`, `ui/UiTime`, `ui/Qr` | Chats, Pairing and Chat screens; conversation/contact cards, date separators, file bubbles, unread badge, send-only auto-scroll, QR generation and scanning |
-| Service | `service/ConnectionService`, `service/MessageNotifications` | Foreground service that owns the engine lifetime; silent mandatory service channel and a separate alerting channel for real incoming messages/files |
-| Engine | `engine/ConnectionEngine`, `engine/FileTransferManager` | Connection state machine, discovery loop, serial message worker, text outbox, streaming file transfer, acknowledgements, network-change handling, instant reconnect |
+| UI | `ui/HomeActivity`, `ui/ChatsFragment`, `ui/ContactsFragment`, `ui/SettingsFragment`, `ui/ContactDetailActivity`, `ui/PairingActivity`, `ui/ChatActivity`, `ui/AboutActivity`, `ui/ChatAdapter`, `ui/UiTime`, `ui/Qr` | Tabbed shell (Chats, Contacts, Settings) plus contact detail, pairing, chat and About screens; contact search, chat previews, date separators, file bubbles, unread badges, send-only auto-scroll, QR generation and scanning |
+| Service | `service/ConnectionService`, `service/MessageNotifications` | Opt-in `dataSync` foreground service that holds the engine lifetime; silent service channel and a separate per-conversation alerting channel for real incoming messages/files |
+| Engine | `engine/ConnectionEngine`, `engine/FileTransferManager` | Contact-scoped connection state machine, discovery loop, serial message worker, per-contact text outbox, streaming file transfer, acknowledgements, network-change handling, instant reconnect |
 | Protocol | `protocol/Protocol`, `protocol/Chunking` | Versioned (v3) schema for text and files, strict validation, filename sanitization, chunking and bounded reassembly |
 | Transport | `net/UdpTransport`, `net/PeerLink`, `net/SecureChannel`, `net/Handshake`, `net/Wire` | One UDP socket with 4 MB buffers, authenticated handshake, encrypted reliable frames and a 4096-frame window |
 | Discovery | `net/rendezvous/TrackerRendezvous`, `net/rendezvous/StunClient`, `net/rendezvous/PublicRendezvous`, `net/dht/DhtClient`, `net/dht/Bencode`, `net/LanBeacon` | BEP 15 tracker and STUN rendezvous on allowed ports; DHT rendezvous on a derived topic; same-subnet beacon |
-| Storage | `data/Db`, `data/MessageRepository`, `data/SecureStore` | SQLite history and transfer state, app-private incoming/outgoing files, pinned peer identity, Keystore-wrapped secrets |
+| Storage | `data/Db`, `data/MessageRepository`, `data/SecureStore`, `data/SettingsStore` | SQLite contacts, history and transfer state, app-private incoming/outgoing files, per-contact pinned identity, local settings, Keystore-wrapped secrets |
 | Crypto | `crypto/X25519`, `crypto/Crypto`, `crypto/Invite` | X25519 (RFC 7748), HKDF-SHA256, HMAC, AES-256-GCM, invitation/topic derivation |
 
 ## Why one UDP socket
@@ -55,23 +55,31 @@ CONNECTED ──link closed──▶ DISCONNECTED ──backoff──▶ DISCOVE
 - Only the **default** network is watched (`registerDefaultNetworkCallback`). Wi-Fi and mobile
   data coexisting is not an event, and a connected link is never torn down by a network
   change: the socket re-routes and the peer endpoint follows the authenticated packets.
-- `ConnectionService` is a `dataSync` foreground service started whenever the app is paired.
+- One contact is the connection target at a time. `MessageRepository` stores the selected
+  contact in `meta`; opening another contact calls `selectContact`, which closes the previous
+  runtime, cancels its in-flight file transfers and starts discovery for the new contact's
+  invitation. Each contact has its own per-contact outbox sequence and invitation secret.
+- `ConnectionService` is an **opt-in** `dataSync` foreground service. It starts only when
+  `Settings → Background connection` is enabled and the selected contact has an invitation.
   It holds the engine open with the screen off or the app backgrounded, and its notification
-  mirrors the real state on a silent, minimum-importance channel. Without it, Android would
-  suspend the process and the link would drop; there is still no background delivery while the
-  device is powered off or the app is force-stopped.
+  mirrors the real state on a silent, minimum-importance channel. With the option off, the
+  engine keeps running for a short grace period after the last activity stops, then closes the
+  socket. There is still no background delivery while the device is powered off or the app is
+  force-stopped.
 - `MessageNotifications` uses a different, high-importance channel only for real incoming
   messages and completed files. `AppVisibility` tracks started activities; the notifier is
   invoked by the engine after persistence and checks that no Knot screen is visible before
-  posting. The service notification never alerts and never uses the message channel.
+  posting. Alerts are per contact (stable notification ID and a `PendingIntent` that opens that
+  chat) plus a group summary. The service notification never alerts and never uses the message
+  channel.
 
 ## Message flow
 
-Outgoing:
+Outgoing (always scoped to the active contact):
 
 1. Validate text (non-empty, ≤ 2000 code points).
-2. Allocate a random 16-byte message ID and a persistent per-device sequence number.
-3. Insert into SQLite as `PENDING`.
+2. Allocate a random 16-byte message ID and a persistent per-contact sequence number.
+3. Insert into SQLite as `PENDING` with that contact's ID.
 4. If a link is ready, split the encoded message into ≤ 1100-byte chunks and hand them to the
    reliable layer. Text is sent before bulk file data and keeps priority while a file streams.
 5. When every chunk of that message has been acknowledged by the transport layer, mark
@@ -141,9 +149,15 @@ means that.
 
 ## UI state
 
-- `MessageRepository` exposes one ordered `StateFlow<List<Message>>` plus an unread count.
-  Incoming unread messages are marked read when the chat is visible; the Chats screen shows a
-  badge and the latest-message preview.
+- `MessageRepository` exposes the contact list, the selected contact, one ordered
+  `StateFlow<List<Message>>` for that contact, a chat-summary list and total/per-chat unread
+  counts. The Chats tab shows every contact with a pairing, invitation or history; local-only
+  contacts stay in the Contacts tab.
+- The shell uses three tabs that keep their own fragment state, with badge and title updates
+  driven by the repository and engine flows. Back from Contacts or Settings returns to Chats.
+- Incoming unread messages are marked read when their chat is visible. Notifications are
+  per-conversation and are dismissed for that contact when its chat opens; the Chats tab badge
+  is driven by the total unread count.
 - File progress updates mutate the already loaded row in place instead of re-querying the
   whole history several times per second.
 - Auto-scroll is armed only for a newly inserted **outgoing** message/file and targets the
@@ -158,17 +172,22 @@ means that.
 
 ## Storage
 
-SQLite (`twoperson.db`, version 2):
+SQLite (`twoperson.db`, version 4):
 
-- `messages(id TEXT PRIMARY KEY, direction, body, created_at, seq, state, sender_id, kind,
-  file_name, mime_type, file_size, file_uri, file_path, transfer_id, received_bytes, is_read)`
-  — text and file rows, progress, read state and transfer identity
-- `peer(id = 1, device_id, public_key, label, display_name, paired_at)` — the pinned identity,
-  local-only label and the preserved first-pairing timestamp
-- `meta(key, value)` — the persistent outgoing sequence counter
+- `contacts(id TEXT PRIMARY KEY, label, note, device_id, public_key, display_name, paired_at,
+  created_at, last_opened_at, has_invitation)` — local address book, per-contact pinned
+  identity and invitation state. `label` and `note` never leave the device.
+- `messages(id TEXT PRIMARY KEY, contact_id, direction, body, created_at, seq, state, sender_id,
+  kind, file_name, mime_type, file_size, file_uri, file_path, transfer_id, received_bytes,
+  transfer_digest, is_read)` — text and file rows, progress, read state and transfer identity
+- `meta(key, value)` — the active contact ID and per-contact outgoing sequence counters. The
+  version-4 migration turns a single-peer installation into the `primary` contact and assigns
+  its existing messages to that contact.
+- The legacy `peer` table is left in place after migration for safety but is no longer read.
 
-The invitation secret and the X25519 identity private key are wrapped with an AES-256-GCM
-key held in the Android Keystore and stored in private SharedPreferences. Message text,
-transfer state, received files and cached outgoing copies are **not** encrypted at rest; they
-live in the app sandbox. App-private files are removed when the conversation is cleared, app
-data is cleared, or the app is uninstalled.
+Each contact has its own invitation secret and pinned X25519 identity. Secrets and the local
+identity private key are wrapped with an AES-256-GCM key held in the Android Keystore and kept
+in private SharedPreferences. Message text, transfer state, received files, cached outgoing
+copies and local settings are **not** encrypted at rest; they live in the app sandbox and are
+excluded from cloud backup and device-to-device transfer. App-private files are removed when a
+conversation is cleared, all data is deleted, app data is cleared, or the app is uninstalled.

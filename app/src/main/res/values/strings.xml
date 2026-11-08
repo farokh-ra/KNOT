@@ -1,73 +1,107 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
     <string name="app_name">Knot</string>
-    <string name="app_tagline">Direct, end-to-end encrypted messages and files between exactly two devices.</string>
 
-    <!-- Home -->
+
+    <!-- Bottom navigation and shell -->
+    <string name="nav_chats">Chats</string>
+    <string name="nav_contacts">Contacts</string>
+    <string name="nav_settings">Settings</string>
     <string name="home_chats_title">Chats</string>
-    <string name="home_status_title">Connection</string>
-    <string name="home_partner_unknown">No paired device</string>
-    <string name="home_partner_connecting">Waiting for the other device</string>
-    <string name="home_conversation_new">No messages yet</string>
-    <string name="home_conversation_empty_hint">Tap to open your private chat.</string>
-    <string name="home_preview_you">You: %1$s</string>
-    <string name="home_button_create">Create invitation</string>
-    <string name="home_button_join">Join invitation</string>
-    <string name="home_button_open_chat">Open chat</string>
-    <string name="home_button_clear">Clear conversation</string>
-    <string name="home_pairing_hint">Pair once: one person creates an invitation code, the other joins with it. Afterwards the app reconnects on its own.</string>
-    <string name="home_partner_section">Contact</string>
-    <string name="home_partner_label_section">Name shown on this device only</string>
-    <string name="home_partner_hint">e.g. Alex’s phone</string>
-    <string name="home_button_save_label">Save name</string>
-    <string name="home_label_saved">Name saved</string>
-    <string name="home_privacy_note">Messages and files travel only over a direct, encrypted peer connection. Public DHT nodes, UDP trackers and STUN servers help the two devices find each other; no server stores, forwards or reads chat content.</string>
-    <string name="home_direct_only_note">A direct connection cannot exist on every network (carrier-grade NAT, symmetric NAT, strict firewalls, some VPNs). There is no relay fallback, so the app reports failure instead of routing your messages through a third party.</string>
-    <string name="home_unpair">Forget partner</string>
-    <string name="home_unpair_confirm_title">Forget this partner?</string>
-    <string name="home_unpair_confirm_message">The invitation is deleted from this device and you will have to pair again. Your local message history is kept.</string>
-    <string name="home_notifications_title">Message notifications</string>
-    <string name="home_notifications_body">Only real incoming messages show a notification. Connection state stays silent.</string>
-    <string name="home_notifications_enable">Enable notifications</string>
-    <string name="home_notifications_settings">Open system settings</string>
-    <string name="home_notifications_on">Notifications are on</string>
-    <string name="home_notifications_off">Notifications are blocked in system settings</string>
-    <string name="home_contact_device">Paired device</string>
-    <string name="home_unknown_device">Unknown device</string>
-    <string name="home_paired_on">Paired %1$s</string>
-    <string name="home_file_preview">File · %1$s</string>
-    <string name="home_avatar_placeholder">K</string>
-    <string name="home_notifications_icon">Notifications</string>
+    <string name="home_contacts_title">Contacts</string>
+    <string name="home_settings_title">Settings</string>
 
-    <!-- Connection states -->
-    <string name="state_not_paired">Not paired</string>
-    <string name="state_discovering">Searching for the other device…</string>
-    <string name="state_connecting">Establishing a direct connection…</string>
-    <string name="state_connected_internet">Connected — direct over the internet</string>
-    <string name="state_connected_lan">Connected — direct on the local network</string>
-    <string name="state_disconnected">Disconnected — retrying</string>
-    <string name="state_unable">Unable to connect directly</string>
-    <string name="state_unable_detail">Direct connection unavailable on these networks. This is a network limitation, not a temporary glitch; the app will keep retrying but cannot use a relay.</string>
-    <string name="state_idle">Not started</string>
+    <!-- Chats -->
+    <string name="chats_empty_title">No conversations yet</string>
+    <string name="chats_empty_body">Add a contact, pair the other device once, and your private thread will appear here. Messages you send while offline stay queued on this device.</string>
+    <string name="chats_new_chat">New conversation</string>
 
-    <!-- Pairing -->
-    <string name="pairing_title">Pair devices</string>
-    <string name="pairing_warning">The invitation code is a secret. Anyone who has it can try to connect to you, so share it only with the person you want to talk to, over a channel you trust.</string>
-    <string name="pairing_section_show">Your invitation code</string>
-    <string name="pairing_show_hint">Show this QR code to the other device, or copy the code and send it yourself.</string>
-    <string name="pairing_waiting">Waiting for the other device to connect…</string>
-    <string name="pairing_copy">Copy code</string>
-    <string name="pairing_copied">Code copied to the clipboard</string>
-    <string name="pairing_section_enter">Enter their invitation code</string>
-    <string name="pairing_code_hint">TPM1-XXXX-XXXX-…</string>
-    <string name="pairing_scan">Scan QR code</string>
-    <string name="pairing_join">Join</string>
-    <string name="pairing_invalid">That code is not valid. Check it and try again.</string>
-    <string name="pairing_button_done">Done</string>
-    <string name="pairing_camera_permission">Camera permission is needed to scan the QR code.</string>
-    <string name="pairing_scan_prompt">Point the camera at the other device’s QR code</string>
-    <string name="pairing_joined_note">Waiting for a direct connection. Keep both apps open on the same invitation.</string>
-    <string name="pairing_paired">Paired. You can start chatting.</string>
+    <string name="chats_join_code">Join with a code</string>
+
+
+    <plurals name="chats_unread_content_description">
+        <item quantity="one">%1$d unread message</item>
+        <item quantity="other">%1$d unread messages</item>
+    </plurals>
+    <string name="chats_rename_title">Contact name</string>
+    <string name="chats_rename_hint">Name shown on this device only</string>
+    <string name="chats_rename_save">Save name</string>
+    <string name="chats_renamed">Contact name updated</string>
+    <string name="chats_clear_title">Clear this conversation?</string>
+    <string name="chats_clear_message">This deletes the messages and app-private files stored on this device. The pairing and contact stay. This cannot be undone.</string>
+    <string name="chats_clear_ok">Clear conversation</string>
+    <string name="chats_cleared">Conversation cleared</string>
+    <string name="chats_delete_title">Delete this contact?</string>
+    <string name="chats_delete_message">The contact, invitation, message history and app-private files will be permanently removed from this device.</string>
+    <string name="chats_delete_ok">Delete contact</string>
+    <string name="chats_deleted">Contact deleted</string>
+    <string name="chats_new_contact_title">New contact</string>
+
+    <string name="chats_new_contact_body">Give this person a name you will recognise. You can change it at any time from the chat list.</string>
+    <string name="chats_new_contact_create">Create contact</string>
+    <string name="chats_new_contact_added">Contact created</string>
+    <string name="chats_contact_hint">Tap to open the conversation</string>
+    <string name="chats_open_info">Contact info</string>
+    <string name="chats_mark_read">Mark as read</string>
+    <string name="chats_menu_more">More actions</string>
+
+    <!-- Contacts -->
+
+    <string name="contacts_search_hint">Search contacts</string>
+    <string name="contacts_empty_title">No contacts yet</string>
+    <string name="contacts_empty_body">Contacts are stored only on this device. Add someone, then create or join an invitation to start a private conversation.</string>
+    <string name="contacts_add">Add contact</string>
+    <string name="contacts_add_title">Add a contact</string>
+    <string name="contacts_add_body">A contact is a private conversation. You can pair the other device now or later.</string>
+    <string name="contacts_name_hint">Name (optional)</string>
+    <string name="contacts_note_hint">Private note (optional)</string>
+    <string name="contacts_added">Contact added</string>
+    <plurals name="contacts_found">
+        <item quantity="one">%1$d contact</item>
+        <item quantity="other">%1$d contacts</item>
+    </plurals>
+    <string name="contacts_no_results">No contact matches that search.</string>
+    <string name="contacts_state_active">Active</string>
+    <string name="contacts_state_paired">Paired</string>
+    <string name="contacts_state_invitation">Invitation ready</string>
+    <string name="contacts_state_local">Not paired</string>
+
+    <string name="contacts_rename_title">Rename contact</string>
+    <string name="contacts_renamed">Contact renamed</string>
+
+    <!-- Contact detail -->
+    <string name="contact_title">Contact</string>
+    <string name="contact_info_title">Contact info</string>
+
+    <string name="contact_name_hint">e.g. Alex</string>
+
+    <string name="contact_note_hint">Only visible on this device</string>
+    <string name="contact_save">Save changes</string>
+    <string name="contact_saved">Contact updated</string>
+    <string name="contact_open_chat">Open conversation</string>
+    <string name="contact_connection_title">Connection</string>
+    <string name="contact_connection_active">This is the active conversation. Knot keeps one direct connection at a time.</string>
+    <string name="contact_connection_inactive">Another contact is active. Opening this contact makes it the connection target.</string>
+    <string name="contact_pairing_title">Pairing</string>
+    <string name="contact_pairing_note">Pair once with a one-time invitation. Knot reconnects automatically afterwards.</string>
+    <string name="contact_show_invitation">Show invitation</string>
+    <string name="contact_new_invitation">New invitation</string>
+    <string name="contact_join_invitation">Join with code</string>
+    <string name="contact_replace_title">Replace the current pairing?</string>
+    <string name="contact_replace_message">A new invitation invalidates the current one. The other device will have to pair again, but local history stays on this device.</string>
+    <string name="contact_replace_ok">Create new invitation</string>
+    <string name="contact_unpair">Unpair device</string>
+    <string name="contact_unpair_title">Unpair this device?</string>
+    <string name="contact_unpair_message">The invitation is removed from this device and you will have to pair again. Local messages are kept.</string>
+    <string name="contact_unpaired">Device unpaired</string>
+    <string name="contact_clear">Clear conversation</string>
+    <string name="contact_delete">Delete contact</string>
+    <string name="contact_delete_title">Delete this contact?</string>
+    <string name="contact_delete_message">This permanently removes the contact, pairing, messages and app-private files from this device.</string>
+    <string name="contact_device_line">Device: %1$s</string>
+    <string name="contact_paired_on">Paired %1$s</string>
+    <string name="contact_not_paired_yet">Not paired yet</string>
+    <string name="contact_identity_line">Identity %1$s</string>
 
     <!-- Chat -->
     <string name="chat_title">Chat</string>
@@ -90,6 +124,7 @@
     <string name="chat_not_paired">Pair with the other device first.</string>
     <string name="chat_jump_latest">Jump to latest message</string>
     <string name="chat_menu_clear">Clear conversation</string>
+    <string name="chat_menu_info">Contact info</string>
     <string name="chat_file_open">Open file</string>
     <string name="chat_file_open_failed">No app can open this file.</string>
     <string name="chat_file_not_ready">This file is still transferring.</string>
@@ -110,6 +145,133 @@
     <string name="chat_delete_confirm_ok">Delete</string>
     <string name="chat_retry_started">Retrying…</string>
     <string name="chat_retry_failed">This message cannot be retried.</string>
+    <string name="chat_missing_contact">This contact no longer exists.</string>
+
+    <!-- Pairing -->
+    <string name="pairing_title">Pair devices</string>
+    <string name="pairing_contact_title">Pair %1$s</string>
+    <string name="pairing_warning">The invitation code is a secret. Anyone who has it can try to connect to you, so share it only with the person you want to talk to, over a channel you trust.</string>
+    <string name="pairing_section_show">Your invitation code</string>
+    <string name="pairing_show_hint">Show this QR code to the other device, or copy the code and send it yourself.</string>
+    <string name="pairing_waiting">Waiting for the other device to connect…</string>
+    <string name="pairing_copy">Copy code</string>
+    <string name="pairing_copied">Code copied to the clipboard</string>
+    <string name="pairing_section_enter">Enter their invitation code</string>
+    <string name="pairing_code_hint" tools:ignore="Typos">TPM1-XXXX-XXXX-…</string>
+    <string name="pairing_scan">Scan QR code</string>
+    <string name="pairing_join">Join</string>
+    <string name="pairing_invalid">That code is not valid. Check it and try again.</string>
+    <string name="pairing_button_done">Done</string>
+    <string name="pairing_camera_permission">Camera permission is needed to scan the QR code.</string>
+    <string name="pairing_scan_prompt">Point the camera at the other device’s QR code</string>
+    <string name="pairing_joined_note">Waiting for a direct connection. Keep both apps open on the same invitation.</string>
+    <string name="pairing_paired">Paired. You can start chatting.</string>
+    <string name="pairing_missing_contact">Choose a contact before pairing.</string>
+
+    <!-- Connection states -->
+    <string name="state_not_paired">Not paired</string>
+    <string name="state_discovering">Searching for the other device…</string>
+    <string name="state_connecting">Establishing a direct connection…</string>
+    <string name="state_connected_internet">Connected — direct over the internet</string>
+    <string name="state_connected_lan">Connected — direct on the local network</string>
+    <string name="state_disconnected">Disconnected — retrying</string>
+    <string name="state_unable">Unable to connect directly</string>
+
+    <string name="state_idle">Not started</string>
+
+    <!-- Settings -->
+
+    <string name="settings_header_title">Knot</string>
+    <string name="settings_header_body">One private thread per contact, direct between the two devices.</string>
+    <string name="settings_appearance">Appearance</string>
+    <string name="settings_theme">Theme</string>
+    <string name="settings_theme_system">Follow system</string>
+    <string name="settings_theme_light">Light</string>
+    <string name="settings_theme_dark">Dark</string>
+    <string name="settings_theme_dialog">Choose a theme</string>
+    <string name="settings_notifications">Notifications</string>
+    <string name="settings_notification_permission">Message notifications</string>
+    <string name="settings_notification_on">Allowed — incoming messages can alert you.</string>
+    <string name="settings_notification_off">Blocked. Notifications are optional, but they are the only way to hear about a new message when the app is closed.</string>
+    <string name="settings_notification_enable">Enable</string>
+    <string name="settings_notification_settings">Open system settings</string>
+    <string name="settings_previews">Show message previews</string>
+    <string name="settings_previews_desc">When off, alerts show only that a message arrived, never the contact name or content.</string>
+    <string name="settings_background">Background connection</string>
+    <string name="settings_background_desc">Keep the direct link alive while Knot is in the background. Android requires a silent, ongoing notification while this is on.</string>
+    <string name="settings_background_confirm_title">Keep the connection in the background?</string>
+    <string name="settings_background_confirm_message">Knot will run a foreground service with a permanent silent notification. This gives you the best chance of receiving messages while the app is closed. You can turn it off at any time. When off, Knot still checks for messages for a short grace period after you leave the app.</string>
+    <string name="settings_background_confirm_ok">Turn on</string>
+    <string name="settings_data">Data &amp; privacy</string>
+    <string name="settings_clear_all">Clear all conversations</string>
+    <string name="settings_clear_all_desc">Delete every message and app-private file. Contacts and pairings stay.</string>
+    <string name="settings_clear_all_confirm">Clear all conversations? This cannot be undone.</string>
+    <string name="settings_clear_all_done">All conversations cleared</string>
+    <string name="settings_delete_all">Delete all contacts &amp; data</string>
+    <string name="settings_delete_all_desc">Remove every contact, invitation, message, file and local setting. This cannot be undone.</string>
+    <string name="settings_delete_all_confirm_title">Delete everything?</string>
+    <string name="settings_delete_all_confirm_message">This permanently removes all contacts, pairings, messages, files and settings from this device. There is no backup.</string>
+    <string name="settings_delete_all_confirm_ok">Delete everything</string>
+    <string name="settings_delete_all_done">All local data deleted</string>
+    <string name="settings_about">About Knot</string>
+
+
+    <string name="settings_privacy_body">No account, no analytics, no crash reporting and no server that stores or forwards messages. Public DHT nodes, trackers and STUN servers help devices find each other; chat content only travels over the direct encrypted link.</string>
+    <string name="settings_version">Version %1$s</string>
+    <string name="settings_no_contacts">Add a contact first.</string>
+    <string name="settings_theme_updated">Theme updated</string>
+
+    <!-- Notifications -->
+    <string name="notif_channel_name">Background connection</string>
+    <string name="notif_channel_desc">Silent, minimum-importance notification used only when you opt into keeping the direct connection alive in the background.</string>
+    <string name="notif_title">Knot</string>
+    <string name="notif_text_connected_lan">Connected — direct on the local network</string>
+    <string name="notif_text_connected_internet">Connected — direct over the internet</string>
+    <string name="notif_text_reconnecting">Reconnecting directly…</string>
+    <string name="notif_text_unable">Unable to connect directly — retrying</string>
+    <string name="notif_text_not_paired">Not paired</string>
+    <string name="notif_text_idle">Not started</string>
+    <string name="notif_messages_channel_name">Messages</string>
+    <string name="notif_messages_channel_desc">Alerts only when a new message or file actually arrives while the app is in the background.</string>
+
+    <string name="notif_new_file">Sent a file: %1$s</string>
+    <string name="notif_private_preview">Open Knot to read the message</string>
+    <string name="notif_private_file">Open Knot to view the file</string>
+    <plurals name="notif_unread_count">
+        <item quantity="one">%1$d unread message</item>
+        <item quantity="other">%1$d unread messages</item>
+    </plurals>
+    <string name="notif_summary_title">New messages</string>
+    <plurals name="notif_summary_text">
+        <item quantity="one">%1$d unread message across your conversations</item>
+        <item quantity="other">%1$d unread messages across your conversations</item>
+    </plurals>
+
+    <!-- About -->
+    <string name="about_title">About</string>
+    <string name="about_hero_subtitle">Two devices. One private thread.</string>
+    <string name="about_version">Version %1$s · Android</string>
+    <string name="about_made_by">Designed &amp; developed by</string>
+    <string name="about_author">Farokh-Ra</string>
+    <string name="about_author_role">Software developer · Independent project</string>
+    <string name="about_links_title">Project links</string>
+    <string name="about_github">GitHub repository</string>
+    <string name="about_github_value">github.com/farokh-ra/KNOT</string>
+    <string name="about_telegram">Telegram</string>
+    <string name="about_telegram_value">@Farokhrex</string>
+    <string name="about_features_title">What Knot stands for</string>
+    <string name="about_feature_direct_title">Direct by design</string>
+    <string name="about_feature_direct_body">If the two devices cannot reach each other, Knot says so. There is no relay hiding in the background.</string>
+    <string name="about_feature_private_title">End-to-end encrypted</string>
+    <string name="about_feature_private_body">X25519 key agreement, HKDF-SHA256 and AES-256-GCM protect every message and file block.</string>
+    <string name="about_feature_serverless_title">No account, no server</string>
+    <string name="about_feature_serverless_body">No analytics, no tracking and no hosted backend. Your history lives in the app sandbox.</string>
+    <string name="about_feature_files_title">Files of any size</string>
+    <string name="about_feature_files_body">Streamed in encrypted blocks with progress, resume and an end-to-end digest check.</string>
+    <string name="about_privacy_title">A small, honest tool</string>
+    <string name="about_privacy_body">Knot is an independent, experimental Android app. Direct peer-to-peer networking cannot cross every NAT or firewall, and the handshake has not been externally audited. Use it where both people understand those limits.</string>
+    <string name="about_open_source">Source code is available on GitHub. Contributions and network-testing reports are welcome.</string>
+    <string name="about_copyright">© 2026 Farokh-Ra. Built with care for private conversations.</string>
 
     <!-- Message states -->
     <string name="message_state_pending">Queued</string>
@@ -129,30 +291,24 @@
     <string name="file_size_and_state">%1$s · %2$s</string>
     <string name="file_info_with_speed">%1$s · %2$s/s</string>
 
-    <!-- Connection service notification -->
-    <string name="notif_channel_name">Direct connection</string>
-    <string name="notif_channel_desc">Keeps the direct, encrypted connection alive while the app is in the background. This channel is silent and minimized.</string>
-    <string name="notif_title">Knot</string>
-    <string name="notif_text_connected_lan">Connected — direct on the local network</string>
-    <string name="notif_text_connected_internet">Connected — direct over the internet</string>
-    <string name="notif_text_reconnecting">Reconnecting directly…</string>
-    <string name="notif_text_unable">Unable to connect directly — retrying</string>
-    <string name="notif_text_not_paired">Not paired</string>
-    <string name="notif_text_idle">Not started</string>
+    <!-- Preview formatting -->
+    <string name="home_preview_you">You: %1$s</string>
+    <string name="home_file_preview">File · %1$s</string>
+    <string name="chat_preview_empty">No messages yet</string>
 
-    <!-- Message notifications -->
-    <string name="notif_messages_channel_name">Messages</string>
-    <string name="notif_messages_channel_desc">Shows a notification only when a new message or file actually arrives while the app is in the background.</string>
-    <string name="notif_new_message">New message</string>
-    <string name="notif_new_file">Sent a file: %1$s</string>
-    <string name="notif_private_preview">New message from your partner</string>
-    <string name="notif_unread_count">%1$d unread</string>
-
+    <!-- Generic -->
     <string name="cancel">Cancel</string>
-    <string name="copied">Copied</string>
-    <string name="peer_changed">The other device presented a different identity, so the connection was rejected. Pair again if this was intentional.</string>
-    <string name="direct_badge">direct · encrypted</string>
-    <string name="channel_badge">channel</string>
+    <string name="save">Save</string>
 
-    <string name="clear_requires_pairing">Nothing to clear.</string>
+
+
+    <string name="copied">Copied</string>
+
+
+    <string name="generic_error">Something went wrong. Try again.</string>
+
+
+
+
+
 </resources>

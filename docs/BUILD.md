@@ -21,7 +21,8 @@ The build was performed on Windows with Git Bash; `local.properties` points at t
 export JAVA_HOME=/path/to/jdk-17-or-newer
 echo "sdk.dir=/path/to/Android/Sdk" > local.properties
 
-./gradlew :app:testDebugUnitTest      # JVM test suite
+./gradlew :app:testDebugUnitTest      # 86 JVM tests
+./gradlew :app:lintDebug              # Android lint report
 ./gradlew :app:assembleDebug          # app/build/outputs/apk/debug/app-debug.apk
 ./gradlew :app:assembleRelease        # app/build/outputs/apk/release/app-release.apk
 ```
@@ -30,7 +31,7 @@ echo "sdk.dir=/path/to/Android/Sdk" > local.properties
 
 The release key is local and git-ignored:
 
-- `signing/release.jks` (RSA 4096, validity 30 years, alias `twoperson`)
+- `signing/release.jks` (RSA key, validity 30 years, alias `knot` on this build machine)
 - `signing/keystore.properties` with `storeFile`, `storePassword`, `keyAlias`, `keyPassword`
 
 Both are excluded by `.gitignore` and must never be committed or shared. If
@@ -40,9 +41,9 @@ than silently signing with a debug key.
 To create a fresh key:
 
 ```bash
-keytool -genkeypair -keystore signing/release.jks -storetype JKS -alias twoperson \
+keytool -genkeypair -keystore signing/release.jks -storetype JKS -alias knot \
   -keyalg RSA -keysize 4096 -validity 10950 \
-  -dname "CN=Two-Person Messenger, OU=Android, O=Two Person Messenger, L=Local, ST=Local, C=US"
+  -dname "CN=Knot Release, O=Knot, C=US"
 ```
 
 Then write the four properties. Reusing the same key matters: a different key means the
@@ -56,22 +57,25 @@ $ANDROID_HOME/build-tools/34.0.0/aapt2 dump badging <apk>
 sha256sum <apk>
 ```
 
-Expected: `package: name='dev.twoperson.messenger' versionCode='1' versionName='1.0.0'`,
+Expected: `package: name='dev.twoperson.messenger' versionCode='2' versionName='1.1.0'`,
 `sdkVersion:'26'`, `targetSdkVersion:'34'`, and a verified v2/v3 signature with the local
 certificate.
 
 ## Release configuration facts
 
-- Release signer: `CN=Two-Person Messenger, OU=Android, O=Two Person Messenger, L=Local, ST=Local, C=US`
-  (the certificate name predates the rename to Knot and is intentionally unchanged — a new key
-  would make the app a different install and lose pairing and history),
-  RSA 4096
+- Release signer: `CN=Knot Release, O=Knot, C=US` on the build machine (RSA 2048 for this
+  local key; use RSA 4096 when creating a fresh key). The certificate is local and must stay
+  stable across releases — a new key makes the app a different install and loses pairing and
+  history.
 - Signing schemes: APK Signature Scheme v2 + v3, set explicitly in `app/build.gradle.kts`
   (`enableV1Signing = false`, `enableV2Signing = true`, `enableV3Signing = true`); v2 is what
   every API 24+ device verifies, so a v1 JAR signature would only add bytes
 - Permissions in the built APK: `INTERNET`, `ACCESS_NETWORK_STATE`, `ACCESS_WIFI_STATE`,
-  `CHANGE_WIFI_MULTICAST_STATE`, `CAMERA` (plus the AndroidX-generated
-  `DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`)
+  `CHANGE_WIFI_MULTICAST_STATE`, `CAMERA`, `FOREGROUND_SERVICE`,
+  `FOREGROUND_SERVICE_DATA_SYNC`, `POST_NOTIFICATIONS`, and `WRITE_EXTERNAL_STORAGE` capped at
+  API 28 (plus the AndroidX-generated `DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`)
+- Backup and device transfer are disabled: `allowBackup=false` and
+  `dataExtractionRules=@xml/data_extraction_rules` exclude every local data domain.
 - No prebuilt APK is committed. Record the SHA-256 of your own build and keep it alongside the
   artifact you distribute.
 - Installation troubleshooting: `docs/INSTALL.md`

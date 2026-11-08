@@ -23,10 +23,10 @@ android {
         applicationId = "dev.twoperson.messenger"
         minSdk = 26
         targetSdk = 34
-        // 1 / 1.0.0: first public version of Knot. The package id is kept so an existing
-        // internal install can be replaced by building with the same signing key.
-        versionCode = 1
-        versionName = "1.0.0"
+        // 2 / 1.1.0: tabbed contacts redesign. The package id and signing key stay stable
+        // so an existing 1.0.0 install can be upgraded in place.
+        versionCode = 2
+        versionName = "1.1.0"
         vectorDrawables.useSupportLibrary = true
     }
 
@@ -76,6 +76,7 @@ android {
 
     buildFeatures {
         viewBinding = true
+        buildConfig = true
     }
 
     testOptions {

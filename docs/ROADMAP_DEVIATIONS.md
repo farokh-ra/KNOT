@@ -24,7 +24,7 @@ security requirement from the roadmap, and replacing only the discovery layer:
 | Relay fallback removed / disabled | No relay, TURN or forwarding code exists at all |
 | File transfer replaced by a small messaging protocol | The base text protocol is still a versioned binary schema with strict validation, chunking, acknowledgements and duplicate suppression. At the user’s request, direct-only streaming file transfer was added on top of it: 16 KiB blocks, resume from the receiver’s acknowledged offset, flow control and a 4 TiB schema cap |
 | Local storage and history | SQLite in the app sandbox (text, file metadata, transfer progress, read state); Keystore-wrapped identity and invitation; app-private incoming/outgoing files |
-| Android UI | Three Material 3 screens (Chats, Pairing, Chat) with conversation/contact cards, file bubbles, date separators, unread badge and jump-to-latest |
+| Android UI | Tabbed Material 3 shell (Chats, Contacts, Settings) plus contact-detail, pairing, chat and About screens, with local contacts, search, private notes, per-contact invitations, file bubbles, date separators, unread badges and jump-to-latest |
 
 Everything else in the roadmap is implemented as written. The trade-off is deliberate: a
 buildable, testable, signed APK today, with the discovery library difference documented.
@@ -45,15 +45,22 @@ buildable, testable, signed APK today, with the discovery library difference doc
 
 ## Deliberate scope choices
 
-- **A `dataSync` foreground service was added**, although the roadmap only asked for
-  foreground reliability. The requirement is a connection that survives backgrounding and
-  screen-off, which Android will not allow without one. It is a lifecycle holder only (no
-  relay, no content, no wake lock) with an ongoing silent notification that mirrors the real
-  state; background delivery while the device is off or the app is force-stopped is still not
-  promised, and there is still no push channel.
-- **Alerting notifications are message-only.** A separate high-importance channel is used only
-  when a real incoming message or completed file is stored while no Knot activity is visible;
-  the mandatory foreground-service notification never alerts.
+- **A `dataSync` foreground service was added, but it is opt-in.** The roadmap only asked for
+  foreground reliability; Android cannot keep a link alive with the screen off without a
+  foreground service and its mandatory notification. Because the product requirement is to
+  avoid an always-present notification, the service is off by default and controlled from
+  Settings. It is a lifecycle holder only (no relay, no content, no wake lock) with a silent
+  notification that mirrors the real state; with it off, the engine keeps a short background
+  grace period. Background delivery while the device is off or the app is force-stopped is
+  still not promised, and there is still no push channel.
+- **Alerting notifications are message-only and per conversation.** A separate high-importance
+  channel is used only when a real incoming message or completed file is stored while no Knot
+  activity is visible. Each contact gets its own notification and unread count; opening that
+  chat clears it. The optional foreground-service notification never alerts.
+- **The local address book extends the original two-person scope.** Each contact remains a
+  strict one-to-one pairing with its own invitation and pinned identity, but several contacts
+  can be stored locally. Only one direct connection is active at a time; opening a contact
+  moves the engine to it.
 - No message or file delivery while the peer is offline: the row stays queued on the sender.
 - No invitation expiry: replaced manually; documented in `LIMITATIONS.md`.
 - Release builds are not minified, so no shrinker rules can break reflection at runtime

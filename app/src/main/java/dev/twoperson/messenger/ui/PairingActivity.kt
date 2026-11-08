@@ -9,7 +9,6 @@ import android.os.Bundle
 import android.view.View
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.view.isVisible
 import androidx.lifecycle.Lifecycle
@@ -17,21 +16,25 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
-import dev.twoperson.messenger.App
 import dev.twoperson.messenger.R
+import dev.twoperson.messenger.data.Contact
 import dev.twoperson.messenger.databinding.ActivityPairingBinding
 import dev.twoperson.messenger.engine.ConnectionState
 import dev.twoperson.messenger.service.ConnectionService
-import dev.twoperson.messenger.util.AppVisibility
 import kotlinx.coroutines.launch
 
-class PairingActivity : AppCompatActivity() {
+/**
+ * Pairing for one contact. An invitation is always tied to the contact the user chose, and the
+ * engine switches to it before showing or joining a code.
+ */
+class PairingActivity : KnotActivity() {
 
     private lateinit var binding: ActivityPairingBinding
-    private val container get() = (application as App).container
-
+    private lateinit var contactId: String
     private lateinit var mode: String
-    private var invitationCode: String? = null
+    private var contact: Contact? = null
+    private var finishing = false
+    private var selectionReady = false
 
     private val scanLauncher = registerForActivityResult(ScanContract()) { result ->
         val contents = result.contents
@@ -47,62 +50,79 @@ class PairingActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        contactId = intent?.getStringExtra(EXTRA_CONTACT_ID)
+            ?: container.repository.activeContact.value?.id.orEmpty()
+        if (contactId.isBlank()) {
+            Toast.makeText(this, R.string.pairing_missing_contact, Toast.LENGTH_SHORT).show()
+            finish()
+            return
+        }
+        mode = intent?.getStringExtra(EXTRA_MODE) ?: MODE_CREATE
+
         binding = ActivityPairingBinding.inflate(layoutInflater)
         setContentView(binding.root)
         setSupportActionBar(binding.toolbar)
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
 
-        mode = intent.getStringExtra(EXTRA_MODE) ?: MODE_CREATE
-
-        val showSection = mode == MODE_CREATE
-        binding.textShowTitle.isVisible = showSection
-        binding.textShowHint.isVisible = showSection
-        binding.imageQr.isVisible = showSection
-        binding.textCode.isVisible = showSection
-        binding.buttonCopyCode.isVisible = showSection
-        binding.textWaiting.isVisible = showSection
-        binding.textEnterTitle.isVisible = !showSection
-        binding.divider.isVisible = !showSection
-        binding.inputJoinLayout.isVisible = !showSection
-        binding.buttonScan.isVisible = !showSection
-        binding.buttonJoin.isVisible = !showSection
-
-        if (showSection) {
-            val code = container.engine.currentInvitationCode() ?: container.engine.createInvitation()
-            invitationCode = code
-            binding.textCode.text = code
-            binding.imageQr.setImageBitmap(Qr.bitmap(code, 640))
-            binding.buttonCopyCode.setOnClickListener { copyCode(code) }
-        }
+        val showInvitation = mode != MODE_JOIN
+        binding.textShowTitle.isVisible = showInvitation
+        binding.textShowHint.isVisible = showInvitation
+        binding.imageQr.isVisible = showInvitation
+        binding.textCode.isVisible = showInvitation
+        binding.buttonCopyCode.isVisible = showInvitation
+        binding.textWaiting.isVisible = showInvitation
+        binding.textEnterTitle.isVisible = !showInvitation
+        binding.divider.isVisible = !showInvitation
+        binding.inputJoinLayout.isVisible = !showInvitation
+        binding.buttonScan.isVisible = !showInvitation
+        binding.buttonJoin.isVisible = !showInvitation
 
         binding.buttonScan.setOnClickListener { requestScan() }
         binding.buttonJoin.setOnClickListener { attemptJoin(binding.inputJoinCode.text?.toString()) }
         binding.buttonDone.setOnClickListener { finish() }
 
+        if (showInvitation) prepareInvitation()
+
+        lifecycleScope.launch {
+            selectionReady = container.engine.selectContact(contactId)
+        }
+
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                container.engine.status.collect { status ->
-                    when (status.state) {
-                        ConnectionState.CONNECTED -> showStatus(getString(R.string.pairing_paired), error = false)
-                        ConnectionState.DISCOVERING, ConnectionState.CONNECTING -> {
-                            if (mode == MODE_CREATE) showStatus(getString(R.string.pairing_waiting), error = false)
+                launch {
+                    container.repository.contacts.collect { contacts ->
+                        val found = contacts.firstOrNull { it.id == contactId }
+                        if (found == null) {
+                            if (!finishing) {
+                                finishing = true
+                                Toast.makeText(
+                                    this@PairingActivity,
+                                    R.string.pairing_missing_contact,
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                                finish()
+                            }
+                        } else {
+                            contact = found
+                            renderContact(found)
                         }
-                        else -> Unit
+                    }
+                }
+                launch {
+                    container.engine.status.collect { status ->
+                        val active = container.repository.activeContact.value?.id == contactId
+                        if (selectionReady && active && status.state == ConnectionState.CONNECTED) {
+                            showStatus(getString(R.string.pairing_paired), error = false)
+                        } else if (mode != MODE_JOIN &&
+                            (status.state == ConnectionState.DISCOVERING ||
+                                status.state == ConnectionState.CONNECTING)
+                        ) {
+                            binding.textWaiting.isVisible = true
+                        }
                     }
                 }
             }
         }
-    }
-
-    override fun onStart() {
-        super.onStart()
-        AppVisibility.onActivityStarted()
-        if (container.engine.isConfigured()) ConnectionService.ensureRunning(this)
-    }
-
-    override fun onStop() {
-        AppVisibility.onActivityStopped()
-        super.onStop()
     }
 
     override fun onSupportNavigateUp(): Boolean {
@@ -110,22 +130,42 @@ class PairingActivity : AppCompatActivity() {
         return true
     }
 
+    private fun renderContact(found: Contact) {
+        val name = found.name
+        binding.textPairingContact.text = getString(R.string.pairing_contact_title, name)
+        supportActionBar?.title = name
+    }
+
+    private fun prepareInvitation() {
+        val code = container.engine.currentInvitationCode(contactId)
+            ?: container.engine.createInvitation(contactId)
+        binding.textCode.text = code
+        binding.imageQr.setImageBitmap(Qr.bitmap(code, 640))
+        binding.buttonCopyCode.setOnClickListener { copyCode(code) }
+        binding.textWaiting.isVisible = true
+        binding.textWaiting.setText(R.string.pairing_waiting)
+    }
+
     private fun attemptJoin(code: String?) {
         val trimmed = code?.trim().orEmpty()
-        if (trimmed.isEmpty() || !container.engine.joinInvitation(trimmed)) {
+        if (trimmed.isEmpty()) {
             showStatus(getString(R.string.pairing_invalid), error = true)
             return
         }
-        showStatus(getString(R.string.pairing_joined_note), error = false)
-        ConnectionService.ensureRunning(this)
         lifecycleScope.launch {
-            kotlinx.coroutines.delay(1_200)
-            finish()
+            container.engine.selectContact(contactId)
+            if (!container.engine.joinInvitation(contactId, trimmed)) {
+                showStatus(getString(R.string.pairing_invalid), error = true)
+                return@launch
+            }
+            showStatus(getString(R.string.pairing_joined_note), error = false)
+            ConnectionService.sync(this@PairingActivity)
         }
     }
 
     private fun requestScan() {
-        val granted = ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+        val granted = ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) ==
+            PackageManager.PERMISSION_GRANTED
         if (granted) {
             launchScanner()
         } else {
@@ -156,12 +196,14 @@ class PairingActivity : AppCompatActivity() {
         binding.textPairingStatus.setTextColor(
             ContextCompat.getColor(this, if (error) R.color.status_error else R.color.status_ok)
         )
-        if (!error) binding.buttonDone.isVisible = true
+        binding.buttonDone.visibility = View.VISIBLE
     }
 
     companion object {
         const val EXTRA_MODE = "mode"
+        const val EXTRA_CONTACT_ID = "contact_id"
         const val MODE_CREATE = "create"
         const val MODE_JOIN = "join"
+        const val MODE_SHOW = "show"
     }
 }

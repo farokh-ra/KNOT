@@ -94,7 +94,11 @@ class ConnectionEngine(
     private val appContext = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    private data class IncomingApp(val link: PeerLink?, val message: AppMessage)
+    private data class IncomingApp(
+        val contactId: String,
+        val link: PeerLink?,
+        val message: AppMessage
+    )
 
     /**
      * Application messages are processed by one serial worker. File data must be appended in
@@ -118,7 +122,7 @@ class ConnectionEngine(
     private val messageWorker: Job = scope.launch {
         for (incoming in messageQueue) {
             try {
-                processMessage(incoming.link, incoming.message)
+                processMessage(incoming.contactId, incoming.link, incoming.message)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -164,6 +168,10 @@ class ConnectionEngine(
     @Volatile
     private var pinnedPeerHex: String? = null
 
+    /** Contact whose invitation currently owns the socket and discovery loops. */
+    @Volatile
+    private var engineContactId: String? = null
+
     private val incomingLock = Any()
 
     /** A responder link built from a peer initiation, promoted to [activeLink] once ready. */
@@ -193,6 +201,7 @@ class ConnectionEngine(
 
     private var foregroundCount = 0
     private var lastRestartAt = 0L
+    private var graceStopJob: Job? = null
 
     private val deviceName: String = listOfNotNull(Build.MANUFACTURER, Build.MODEL)
         .joinToString(" ")
@@ -200,76 +209,171 @@ class ConnectionEngine(
         .ifEmpty { "Android device" }
         .take(40)
 
-    fun isConfigured(): Boolean = secureStore.inviteSecret() != null
+    fun isConfigured(): Boolean = repository.activeContact.value?.hasInvitation == true
 
-    fun currentInvitationCode(): String? = secureStore.inviteSecret()?.let { Invite.encode(it) }
+    fun currentInvitationCode(contactId: String): String? =
+        secureStore.inviteSecret(contactId)?.let { Invite.encode(it) }
 
     fun onForeground() {
         synchronized(this) {
+            graceStopJob?.cancel()
+            graceStopJob = null
             foregroundCount++
             if (foregroundCount == 1) start()
         }
     }
 
+    /**
+     * Android does not allow network work to continue indefinitely after the last screen goes
+     * away unless a foreground service is showing its mandatory notification. By default the
+     * engine keeps the direct link alive for a short grace period so a reply that arrives right
+     * after leaving the app can still raise a message notification, then it shuts the socket
+     * down cleanly. Users who need always-on background delivery can opt into the service.
+     */
     fun onBackground() {
         synchronized(this) {
             foregroundCount = maxOf(0, foregroundCount - 1)
-            if (foregroundCount == 0) {
-                stopResources()
-                unregisterNetworkCallback()
-                _status.value = ConnectionStatus(
-                    if (isConfigured()) ConnectionState.IDLE else ConnectionState.NOT_PAIRED
-                )
+            if (foregroundCount != 0) return
+            graceStopJob?.cancel()
+            graceStopJob = scope.launch {
+                delay(BACKGROUND_GRACE_MS)
+                synchronized(this@ConnectionEngine) {
+                    if (foregroundCount != 0) return@synchronized
+                    stopResources()
+                    unregisterNetworkCallback()
+                    _status.value = ConnectionStatus(
+                        if (isConfigured()) ConnectionState.IDLE else ConnectionState.NOT_PAIRED
+                    )
+                }
             }
         }
     }
 
-    /** Creates a fresh invitation. Any previous pairing is dropped. */
-    fun createInvitation(): String {
-        val secret = Invite.newSecret()
-        secureStore.saveInviteSecret(secret)
+    /**
+     * Called after the UI changes the selected conversation. Only the selected contact is
+     * connected at a time, so the old discovery socket is closed and the loop restarts with
+     * the new invitation.
+     */
+    fun onActiveContactChanged() {
+        pinnedPeerHex = null
+        lastPeerEndpoint = null
         scope.launch {
-            repository.clearPeer()
-            pinnedPeerHex = null
-            repository.resetFailedToPending()
-            lastPeerEndpoint = null
-            restartRuntime()
-        }
-        return Invite.encode(secret)
-    }
-
-    /** Accepts the other device's invitation code. */
-    fun joinInvitation(code: String): Boolean {
-        val secret = Invite.decode(code) ?: return false
-        secureStore.saveInviteSecret(secret)
-        scope.launch {
-            repository.clearPeer()
-            pinnedPeerHex = null
-            repository.resetFailedToPending()
-            lastPeerEndpoint = null
-            restartRuntime()
-        }
-        return true
-    }
-
-    fun forgetPartner() {
-        secureStore.saveInviteSecret(null)
-        scope.launch {
-            repository.clearPeer()
-            pinnedPeerHex = null
-            lastPeerEndpoint = null
-            stopResources()
-            _status.value = ConnectionStatus(ConnectionState.NOT_PAIRED)
+            fileTransfers.cancelAll()
+            restartRuntime(force = true)
         }
     }
 
     /**
-     * Cancels in-flight transfers first, then deletes the local history and the app-private
-     * copies that only those messages referenced. SAF originals owned by the user are untouched.
+     * Makes one contact the connection target. The engine only keeps one direct link at a time,
+     * so switching contacts closes the previous runtime and starts discovery for the new one.
      */
-    suspend fun clearConversation() = withContext(Dispatchers.IO) {
+    suspend fun selectContact(contactId: String): Boolean {
+        val changed = repository.activeContact.value?.id != contactId
+        val selected = repository.setActiveContact(contactId)
+        if (selected && changed) onActiveContactChanged()
+        return selected
+    }
+
+    /** Creates a fresh invitation for one contact. Any previous pairing is dropped. */
+    fun createInvitation(contactId: String): String {
+        val secret = Invite.newSecret()
+        secureStore.saveInviteSecret(contactId, secret)
+        scope.launch {
+            fileTransfers.cancelAll()
+            repository.markInvitation(contactId, true)
+            repository.resetContactPairing(contactId)
+            repository.setActiveContact(contactId)
+            repository.resetFailedToPending(contactId)
+            pinnedPeerHex = null
+            lastPeerEndpoint = null
+            if (foregroundCount > 0) restartRuntime(force = true)
+        }
+        return Invite.encode(secret)
+    }
+
+    /** Accepts the other device's invitation code for one contact. */
+    fun joinInvitation(contactId: String, code: String): Boolean {
+        val secret = Invite.decode(code) ?: return false
+        secureStore.saveInviteSecret(contactId, secret)
+        scope.launch {
+            fileTransfers.cancelAll()
+            repository.markInvitation(contactId, true)
+            repository.resetContactPairing(contactId)
+            repository.setActiveContact(contactId)
+            repository.resetFailedToPending(contactId)
+            pinnedPeerHex = null
+            lastPeerEndpoint = null
+            if (foregroundCount > 0) restartRuntime(force = true)
+        }
+        return true
+    }
+
+    /** Removes the invitation and pinned identity but keeps local history for that contact. */
+    fun forgetPartner(contactId: String) {
+        secureStore.saveInviteSecret(contactId, null)
+        scope.launch {
+            repository.markInvitation(contactId, false)
+            repository.resetContactPairing(contactId)
+            if (engineContactId == contactId) {
+                pinnedPeerHex = null
+                lastPeerEndpoint = null
+                stopResources()
+                _status.value = ConnectionStatus(ConnectionState.NOT_PAIRED)
+            }
+        }
+    }
+
+    /** Deletes a contact, its invitation, its history and any app-private files. */
+    suspend fun deleteContact(contactId: String) = withContext(Dispatchers.IO) {
+        val wasActive = repository.activeContact.value?.id == contactId
+        if (wasActive) {
+            fileTransfers.cancelAll()
+            stopResources()
+        }
+        secureStore.saveInviteSecret(contactId, null)
+        val removed = repository.deleteContact(contactId)
+        fileTransfers.deleteLocalFiles(removed)
+        if (wasActive) {
+            pinnedPeerHex = null
+            lastPeerEndpoint = null
+            if (repository.activeContact.value != null) {
+                restartRuntime(force = true)
+            } else {
+                _status.value = ConnectionStatus(ConnectionState.NOT_PAIRED)
+            }
+        }
+    }
+
+    /** Deletes every contact, invitation, message and app-private file on this device. */
+    suspend fun deleteAllContacts() = withContext(Dispatchers.IO) {
         fileTransfers.cancelAll()
-        val removed = repository.clearConversation()
+        stopResources()
+        repository.contacts.value.forEach { contact ->
+            secureStore.saveInviteSecret(contact.id, null)
+        }
+        val removed = repository.deleteAllContacts()
+        fileTransfers.deleteLocalFiles(removed)
+        pinnedPeerHex = null
+        lastPeerEndpoint = null
+        _status.value = ConnectionStatus(ConnectionState.NOT_PAIRED)
+    }
+
+    /**
+     * Cancels in-flight transfers first, then deletes one conversation and the app-private
+     * copies that only those messages referenced. SAF originals are untouched. Passing no
+     * contact targets the currently selected conversation.
+     */
+    suspend fun clearConversation(contactId: String? = null) = withContext(Dispatchers.IO) {
+        val target = contactId ?: repository.activeContact.value?.id ?: return@withContext
+        fileTransfers.cancelAll()
+        val removed = repository.clearConversation(target)
+        fileTransfers.deleteLocalFiles(removed)
+    }
+
+    /** Deletes every local conversation but keeps contacts and pairings. */
+    suspend fun clearAllConversations() = withContext(Dispatchers.IO) {
+        fileTransfers.cancelAll()
+        val removed = repository.clearAllConversations()
         fileTransfers.deleteLocalFiles(removed)
     }
 
@@ -281,17 +385,20 @@ class ConnectionEngine(
         val body = raw.trim()
         if (body.isEmpty()) return false
         if (body.codePointCount(0, body.length) > Protocol.MAX_TEXT_CODE_POINTS) return false
-        if (!isConfigured()) return false
+        val contact = repository.activeContact.value ?: return false
+        if (!contact.hasInvitation) return false
 
         val id = Hex.encode(Crypto.randomBytes(Protocol.MESSAGE_ID_BYTES))
-        val sequence = repository.nextSequence()
-        val message = repository.insertOutgoing(id, body, System.currentTimeMillis(), sequence)
+        val sequence = repository.nextSequence(contact.id)
+        val message = repository.insertOutgoing(
+            contact.id, id, body, System.currentTimeMillis(), sequence
+        )
         repository.refresh()
 
         val link = activeLink
         if (link != null && link.isReady && !deliver(link, message)) {
             // Send window was full; the outbox flusher retries as acknowledgements arrive.
-            scope.launch { flushOutbox(link) }
+            scope.launch { flushOutbox(link, contact.id) }
         }
         return true
     }
@@ -302,8 +409,9 @@ class ConnectionEngine(
      * used to resume automatically.
      */
     suspend fun sendFile(uri: Uri, displayName: String, mimeType: String, size: Long): Boolean {
-        if (!isConfigured()) return false
-        return fileTransfers.enqueueFile(uri, displayName, mimeType, size) != null
+        val contact = repository.activeContact.value ?: return false
+        if (!contact.hasInvitation) return false
+        return fileTransfers.enqueueFile(contact.id, uri, displayName, mimeType, size) != null
     }
 
     /**
@@ -313,10 +421,11 @@ class ConnectionEngine(
     suspend fun retryMessage(id: String): Boolean {
         val retried = repository.retryMessage(id)
         if (!retried) return false
+        val contactId = repository.messageById(id)?.contactId ?: return true
         val link = activeLink
-        if (link != null && link.isReady) {
-            scope.launch { flushOutbox(link) }
-            fileTransfers.onLinkReady(link)
+        if (link != null && link.isReady && repository.activeContact.value?.id == contactId) {
+            scope.launch { flushOutbox(link, contactId) }
+            fileTransfers.onLinkReady(link, contactId)
         }
         return true
     }
@@ -342,13 +451,24 @@ class ConnectionEngine(
         var backoff = INITIAL_BACKOFF_MS
         while (isCoroutineActive()) {
             try {
-                val secret = secureStore.inviteSecret()
-                if (secret == null) {
+                val active = repository.activeContact.value
+                if (active == null || !active.hasInvitation) {
                     routingAuthKey = null
                     routingSocket = null
+                    engineContactId = null
                     _status.value = ConnectionStatus(ConnectionState.NOT_PAIRED)
                     return
                 }
+                val contactId = active.id
+                val secret = secureStore.inviteSecret(contactId)
+                if (secret == null) {
+                    routingAuthKey = null
+                    routingSocket = null
+                    engineContactId = null
+                    _status.value = ConnectionStatus(ConnectionState.NOT_PAIRED)
+                    return
+                }
+                engineContactId = contactId
                 val authKey = Invite.authKey(secret)
                 val topic = Invite.topic(secret)
 
@@ -365,7 +485,7 @@ class ConnectionEngine(
                 // Populate the reader-thread caches before routing is enabled.
                 localIdentityPrivateKey = secureStore.identityPrivateKey()
                 ownIdentity = secureStore.identityPublicKey()
-                pinnedPeerHex = repository.peer()?.publicKeyHex
+                pinnedPeerHex = active.publicKeyHex
                 routingAuthKey = authKey
                 routingSocket = socket
                 startLanBeacon(topic)
@@ -393,7 +513,9 @@ class ConnectionEngine(
                     lastPeerEndpoint?.let { hint ->
                         _status.value = ConnectionStatus(ConnectionState.CONNECTING)
                         tried[hint] = System.currentTimeMillis()
-                        connectedLink = attemptConnection(hint, authKey, socket, QUICK_HANDSHAKE_MS)
+                        connectedLink = attemptConnection(
+                            hint, authKey, socket, QUICK_HANDSHAKE_MS, contactId
+                        )
                     }
 
                     var phaseStart = System.currentTimeMillis()
@@ -412,11 +534,13 @@ class ConnectionEngine(
                             }
                             continue
                         }
-                        if (!isConfigured()) break
+                        if (repository.activeContact.value?.id != contactId) break
                         if (!isDialable(candidate, socket, rendezvousClient, tried)) continue
                         tried[candidate] = System.currentTimeMillis()
                         _status.value = ConnectionStatus(ConnectionState.CONNECTING)
-                        connectedLink = attemptConnection(candidate, authKey, socket, HANDSHAKE_BUDGET_MS)
+                        connectedLink = attemptConnection(
+                            candidate, authKey, socket, HANDSHAKE_BUDGET_MS, contactId
+                        )
                         phaseStart = System.currentTimeMillis()
                     }
                 } finally {
@@ -435,6 +559,11 @@ class ConnectionEngine(
                     backoff = nextBackoff(backoff)
                     continue
                 }
+                if (repository.activeContact.value?.id != contactId) {
+                    connected.close("contact_switched")
+                    if (activeLink === connected) activeLink = null
+                    continue
+                }
 
                 backoff = INITIAL_BACKOFF_MS
                 val endpoint = connected.remoteAddress
@@ -442,9 +571,9 @@ class ConnectionEngine(
                     ConnectionState.CONNECTED,
                     direct = if (isLocalAddress(endpoint.address)) DirectKind.LOCAL_NETWORK else DirectKind.INTERNET
                 )
-                repository.resetFailedToPending()
-                fileTransfers.onLinkReady(connected)
-                val outboxJob = scope.launch { outboxLoop(connected) }
+                repository.resetFailedToPending(contactId)
+                fileTransfers.onLinkReady(connected, contactId)
+                val outboxJob = scope.launch { outboxLoop(connected, contactId) }
                 val reason = connected.awaitClosed()
                 outboxJob.cancel()
                 fileTransfers.onLinkClosed(connected)
@@ -456,7 +585,7 @@ class ConnectionEngine(
                 // ~45s: report the honest failed state instead of pretending it is in transit.
                 // Nothing is deleted, and the next direct connection retries the same IDs.
                 if (reason == "delivery_failed") {
-                    repository.markUndeliveredAsFailed()
+                    repository.markUndeliveredAsFailed(contactId)
                 }
                 _status.value = ConnectionStatus(ConnectionState.DISCONNECTED, detail = reason)
                 _events.tryEmit(EngineEvent.PeerOffline)
@@ -518,7 +647,8 @@ class ConnectionEngine(
         candidate: InetSocketAddress,
         authKey: ByteArray,
         socket: DatagramSocket,
-        budgetMs: Long
+        budgetMs: Long,
+        contactId: String
     ): PeerLink? {
         if (!candidate.address.isReachableAddress() || candidate.port <= 0) return null
         activeLink?.let { existing ->
@@ -531,7 +661,7 @@ class ConnectionEngine(
             override fun onHandshakeComplete(peerIdentityPublicKey: ByteArray) = Unit
 
             override fun onApplicationMessage(message: AppMessage) {
-                handleMessage(linkRef, message)
+                handleMessage(contactId, linkRef, message)
             }
 
             override fun onClosed(reason: String) {
@@ -549,7 +679,7 @@ class ConnectionEngine(
             link.close("handshake_failed")
             return null
         }
-        if (!finalizeLink(link, identity)) {
+        if (!finalizeLink(link, identity, contactId)) {
             if (activeLink === link) activeLink = null
             return null
         }
@@ -575,16 +705,16 @@ class ConnectionEngine(
     }
 
     /** Pins the peer on first contact, rejects a different identity, then sends Hello. */
-    private suspend fun finalizeLink(link: PeerLink, identity: ByteArray): Boolean {
+    private suspend fun finalizeLink(link: PeerLink, identity: ByteArray, contactId: String): Boolean {
         val identityHex = Hex.encode(identity)
-        val pinned = repository.peer()
+        val pinned = repository.contact(contactId)
         if (pinned?.publicKeyHex != null && pinned.publicKeyHex != identityHex) {
             link.close("identity_mismatch")
             _events.tryEmit(EngineEvent.PeerIdentityMismatch)
             return false
         }
         if (pinned?.publicKeyHex == null) {
-            repository.savePeer(null, identityHex, null)
+            repository.savePeer(contactId, null, identityHex, null)
             pinnedPeerHex = identityHex
             _events.tryEmit(EngineEvent.PairingCompleted)
         }
@@ -599,18 +729,23 @@ class ConnectionEngine(
         return true
     }
 
-    private fun handleMessage(link: PeerLink?, message: AppMessage) {
-        messageQueue.trySend(IncomingApp(link, message))
+    private fun handleMessage(contactId: String, link: PeerLink?, message: AppMessage) {
+        messageQueue.trySend(IncomingApp(contactId, link, message))
     }
 
-    private suspend fun processMessage(link: PeerLink?, message: AppMessage) {
+    private suspend fun processMessage(contactId: String, link: PeerLink?, message: AppMessage) {
         when (message) {
             is AppMessage.Text -> {
                 val id = Hex.encode(message.messageId)
-                val sender = repository.peer()?.deviceId ?: "peer"
+                val sender = repository.contact(contactId)?.deviceId ?: "peer"
                 // Store before acknowledging, as the protocol requires.
                 val stored = repository.insertIncoming(
-                    id, message.body, message.createdAt, message.sequence, sender
+                    contactId = contactId,
+                    id = id,
+                    body = message.body,
+                    createdAt = message.createdAt,
+                    sequence = message.sequence,
+                    senderId = sender
                 )
                 (link ?: activeLink)?.sendApplicationMessage(AppMessage.Ack(message.messageId))
                 if (stored) {
@@ -632,13 +767,18 @@ class ConnectionEngine(
                     return
                 }
                 val deviceId = Hex.encode(message.deviceId)
-                val pinned = repository.peer()
+                val pinned = repository.contact(contactId)
                 if (pinned?.deviceId != null && pinned.deviceId != deviceId) {
                     (link ?: activeLink)?.close("identity_mismatch")
                     _events.tryEmit(EngineEvent.PeerIdentityMismatch)
                     return
                 }
-                repository.savePeer(deviceId, Hex.encode(message.identityPublicKey), message.displayName)
+                repository.savePeer(
+                    contactId,
+                    deviceId,
+                    Hex.encode(message.identityPublicKey),
+                    message.displayName
+                )
                 _status.update { it.copy(peerName = message.displayName) }
                 _events.tryEmit(EngineEvent.PairingCompleted)
             }
@@ -647,7 +787,7 @@ class ConnectionEngine(
             is AppMessage.FileData,
             is AppMessage.FileEnd,
             is AppMessage.FileAck,
-            is AppMessage.FileDone -> fileTransfers.handle(message, link ?: activeLink)
+            is AppMessage.FileDone -> fileTransfers.handle(contactId, message, link ?: activeLink)
         }
     }
 
@@ -655,10 +795,10 @@ class ConnectionEngine(
      * Delivers text messages still queued. Bulk file data is handled by [FileTransferManager]
      * and pauses whenever this queue has work, so chat stays responsive during huge transfers.
      */
-    private suspend fun flushOutbox(link: PeerLink) {
+    private suspend fun flushOutbox(link: PeerLink, contactId: String) {
         var rounds = 0
         while (link.isReady && rounds < MAX_FLUSH_ROUNDS) {
-            val pending = repository.pendingTextOutgoing()
+            val pending = repository.pendingTextOutgoing(contactId)
             if (pending.isEmpty()) return
             var blocked = false
             for (message in pending) {
@@ -671,10 +811,10 @@ class ConnectionEngine(
         }
     }
 
-    private suspend fun outboxLoop(link: PeerLink) {
+    private suspend fun outboxLoop(link: PeerLink, contactId: String) {
         while (link.isReady) {
             try {
-                val pending = repository.pendingTextOutgoing()
+                val pending = repository.pendingTextOutgoing(contactId)
                 if (pending.isEmpty()) {
                     delay(OUTBOX_IDLE_MS)
                     continue
@@ -789,7 +929,7 @@ class ConnectionEngine(
             if (existing != null && existing !== active && !existing.isClosed) {
                 existing.close("superseded")
             }
-            val created = createIncomingLink(socket, from, handshake)
+            val created = createIncomingLink(socket, from, handshake) ?: return
             incomingLink = created
             incomingFrom = from
             created.onDatagram(data, from)
@@ -800,15 +940,19 @@ class ConnectionEngine(
         socket: DatagramSocket,
         from: InetSocketAddress,
         handshake: Handshake
-    ): PeerLink {
+    ): PeerLink? {
         lateinit var link: PeerLink
+        // Capture the contact this responder link belongs to. A contact switch closes the
+        // socket and clears routingAuthKey, so this cannot be stale by the time a packet is
+        // authenticated.
+        val contactId = engineContactId ?: return null
         val listener = object : PeerLink.Listener {
             override fun onHandshakeComplete(peerIdentityPublicKey: ByteArray) {
-                scope.launch { adoptIncoming(link, peerIdentityPublicKey) }
+                scope.launch { adoptIncoming(link, peerIdentityPublicKey, contactId) }
             }
 
             override fun onApplicationMessage(message: AppMessage) {
-                handleMessage(link, message)
+                handleMessage(contactId, link, message)
             }
 
             override fun onClosed(reason: String) {
@@ -826,7 +970,7 @@ class ConnectionEngine(
     }
 
     /** Promotes a responder link that the peer initiated. Runs on the IO dispatcher. */
-    private suspend fun adoptIncoming(link: PeerLink, identity: ByteArray) {
+    private suspend fun adoptIncoming(link: PeerLink, identity: ByteArray, contactId: String) {
         if (link.isClosed) return
         val current = activeLink
         if (current != null && current !== link) {
@@ -843,7 +987,7 @@ class ConnectionEngine(
                 incomingFrom = null
             }
         }
-        if (!finalizeLink(link, identity)) {
+        if (!finalizeLink(link, identity, contactId)) {
             if (activeLink === link) activeLink = null
             return
         }
@@ -951,10 +1095,12 @@ class ConnectionEngine(
         scope.launch { restartRuntime() }
     }
 
-    private suspend fun restartRuntime() {
+    private suspend fun restartRuntime(force: Boolean = false) {
         restartMutex.withLock {
             val now = System.currentTimeMillis()
-            if (now - lastRestartAt < RESTART_DEBOUNCE_MS) return
+            if (!force) {
+                if (now - lastRestartAt < RESTART_DEBOUNCE_MS) return
+            }
             lastRestartAt = now
             stopResources()
             delay(RESTART_SETTLE_MS)
@@ -965,6 +1111,7 @@ class ConnectionEngine(
     private fun stopResources() {
         loopJob?.cancel()
         loopJob = null
+        engineContactId = null
         candidateSink = null
         routingAuthKey = null
         routingSocket = null
@@ -1003,12 +1150,15 @@ class ConnectionEngine(
     }
 
     fun shutdown() {
+        graceStopJob?.cancel()
+        graceStopJob = null
         stopResources()
         unregisterNetworkCallback()
         scope.cancel()
     }
 
     companion object {
+        private const val BACKGROUND_GRACE_MS = 20_000L
         private const val DISCOVERY_INTERVAL_MS = 4_000L
         private const val DISCOVERY_BUDGET_MS = 7_000L
         private const val RENDEZVOUS_INTERVAL_MS = 7_000L

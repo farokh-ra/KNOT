@@ -5,7 +5,7 @@
 All checks below were run on the build machine during development. Rebuild locally with the
 included Gradle wrapper to reproduce them.
 
-### JVM unit and integration tests — 68 tests, all passing
+### JVM unit and integration tests — 86 tests, all passing
 
 ```bash
 ./gradlew :app:testDebugUnitTest
@@ -25,9 +25,12 @@ included Gradle wrapper to reproduce them.
 | `net.dht.BencodeTest` (5) | Nested round trip with binary strings, canonical dictionary order, malformed input and trailing garbage rejected |
 | `net.rendezvous.StunClientTest` (2) | XOR-MAPPED-ADDRESS parsing from a real binding-success packet; a reply with a foreign transaction id is ignored |
 | `net.rendezvous.TrackerRendezvousTest` (1) | Real BEP 15 connect/announce byte layout against a local fake tracker: advertised port, `started` event, compact peer parsing, announce throttle |
+| `data.ContactModelTest` (12) | Local label/note sanitization and limits, initials, name fallback order, pairing and invitation flags, contact search, chat-summary sort order and preview formatting for text/files |
+| `data.SettingsModelTest` (6) | Theme parsing and fallback, notification title/body policy with previews on or off, background-service policy, default settings |
 
 These tests exercise the real socket path (`DatagramPacket`/`DatagramSocket` on loopback)
-and the real crypto, not mocks.
+and the real crypto, not mocks. The contact and settings tests cover the pure model/policy
+layer that the new tabs and notification behavior rely on.
 
 ### Live rendezvous check (build machine network)
 
@@ -54,20 +57,21 @@ sha256sum app/build/outputs/apk/*/*.apk
 
 Recorded results:
 
-- all 68 JVM tests pass, including a 2 MiB ordered file-block transfer over loopback UDP;
-- `:app:lintDebug` completes with no errors;
+- all 86 JVM tests pass, including a 2 MiB ordered file-block transfer over loopback UDP;
+- `:app:lintDebug` completes with no errors (warnings are informational);
 - debug and release APKs build from a clean Gradle cache;
-- the release APK verifies with the local `twoperson` certificate (v2/v3 signature scheme);
-- package `dev.twoperson.messenger`, versionCode 1, versionName 1.0.0, minSdk 26, targetSdk 34;
+- the release APK verifies with the local `knot` certificate (v2/v3 signature scheme);
+- package `dev.twoperson.messenger`, versionCode 2, versionName 1.1.0, minSdk 26, targetSdk 34;
 - record the SHA-256 of your local build.
 
 ### Not verified here
 
 No Android device or emulator is attached to this machine, so the following were **not**
 run: installation, first launch, invitation QR scanning, camera permission flow, on-device
-UI rendering, two-phone discovery, hole punching, reconnection after a network change,
-large-file transfer/resume, notification permission and channel behavior, and battery/data
-measurements. They are the job of the matrix and checks below.
+UI rendering, tab navigation, contact search/rename flows, theme switching, two-phone
+discovery, hole punching, reconnection after a network change, large-file transfer/resume,
+notification permission and channel behavior, and battery/data measurements. They are the
+job of the matrix and checks below.
 
 ## Two-phone test matrix (to be completed)
 
@@ -89,20 +93,24 @@ label the app displayed (*direct (internet)* / *direct (local network)*).
 | 9 | App backgrounded then resumed | | | | | |
 | 10 | Temporary internet loss (airplane mode 30 s) | | | | | |
 | 11 | Restrictive CGNAT / symmetric NAT | | | | | |
-| 12 | Clean install → upgrade install → uninstall/reinstall | | | | | |
+| 12 | Clean install → upgrade install (v1.0 single-contact history) → uninstall/reinstall | | | | | |
+| 13 | Two paired contacts, switch between them | | | | | |
 
 ### Functional checks to perform on the phones
 
-1. Pair via QR; confirm the code text also works by pasting.
+1. Pair via QR; confirm the code text also works by pasting. Repeat for a second contact and
+   confirm each contact has a separate invitation and history.
 2. Send messages both ways at the same time; confirm ordering and no duplicates.
-3. Kill both apps, reopen; confirm history is intact.
+3. Kill both apps, reopen; confirm every contact's history is intact.
 4. Send while disconnected; confirm the message shows `Queued`, then `Sent to peer`, then
    `Received by peer` after reconnection.
 5. With one app closed, confirm the sender never claims delivery.
 6. Force a wrong invitation on a third device; confirm it cannot join.
-7. Use *Clear conversation*; confirm the history is removed and the pairing survives.
-8. Use *Forget partner*; confirm the invitation is gone and chat is unavailable until repaired.
-9. Confirm the home screen shows *Unable to connect directly* when a direct path is
+7. Use *Clear conversation*; confirm only that contact's history is removed and the pairing and
+   other contacts survive.
+8. Use *Unpair device*; confirm the invitation is gone and that chat is unavailable until
+   repaired, without affecting other contacts.
+9. Confirm the active card shows *Unable to connect directly* when a direct path is
    deliberately blocked (e.g. block outbound UDP), and that no traffic is relayed anywhere.
 10. Check `adb logcat` during a session for absence of message text and secrets.
 11. Attach a small file in each direction; confirm progress, speed, completion, tap-to-open and
@@ -115,12 +123,13 @@ label the app displayed (*direct (internet)* / *direct (local network)*).
 14. Clear the conversation during an active transfer; confirm both sides stop, no row remains,
     and app storage does not keep the part file.
 15. Send text while a large file is streaming; confirm the message arrives promptly.
-16. Background the app and receive a message/file; confirm one alerting notification appears on
-    the high-importance channel and the ongoing service notification stays silent. Keep the
-    chat open and receive another; confirm no alert is posted while a Knot screen is visible.
-17. Deny notification permission on Android 13+; confirm the app still works, the Chats
-    notification card is visible and opens system settings, the permission is not requested on
-    launch, and the card disappears once notifications are enabled.
+16. Background the app and receive a message/file; confirm one per-conversation notification
+    appears on the high-importance channel and the service notification (if enabled) stays
+    silent. Keep the chat open and receive another; confirm no alert is posted while a Knot
+    screen is visible.
+17. Deny notification permission on Android 13+; confirm the app still works, Settings links to
+    system settings, the permission is not requested on launch, and the switch reflects the
+    state once notifications are enabled.
 18. Send several messages while scrolled up, then send one; confirm the list scrolls only for
     the outgoing send. Tap the down-arrow to return to the newest row.
 19. Long-press a sent text message and copy it; confirm the clipboard contains exactly the
@@ -131,6 +140,29 @@ label the app displayed (*direct (internet)* / *direct (local network)*).
     provider); confirm the app makes a local copy and the transfer completes.
 21. Revoke a persisted URI grant or delete the original after sending; confirm the outgoing
     message reports the file as unavailable instead of crashing.
+22. Use the Chats, Contacts and Settings tabs. Confirm titles, the unread badge, contact search,
+    the empty states and back-from-tab behavior work, and that opening a contact detail makes it
+    the active connection target.
+23. Rename a contact from the Chats three-dot menu after pairing; confirm the list, chat title,
+    notification title and contact detail update immediately while the peer's own name is
+    unchanged.
+24. Switch System/Light/Dark in Settings and confirm every screen, dialog, card and status bar
+    follows the choice after recreation. Return to System and confirm the OS setting is used.
+25. Hide message previews and receive a message; confirm the notification shows only the app
+    name and a private body, and that the lockscreen public version is redacted.
+26. Open one conversation's notification; confirm only that chat opens and its notification is
+    cleared while another contact's notification remains.
+27. Enable *Background connection*; confirm the silent ongoing service notification appears and
+    survives backgrounding. Disable it and confirm the notification disappears and the grace
+    period still delivers for a short time.
+28. On Android 13+, revoke notification permission while background mode is on; confirm the
+    service does not crash and Settings still reports the blocked state.
+29. Use *Settings → Delete all contacts & data*; confirm contacts, messages, files, invitations
+    and local settings are removed, notifications are cleared and the UI returns to a clean
+    first-run state.
+30. Upgrade from a v1.0 single-contact install; confirm the old conversation appears as the
+    `primary` contact with its pairing and history intact, and that the old invitation still
+    connects.
 
 ### File-transfer matrix (to be completed)
 
@@ -145,9 +177,14 @@ label the app displayed (*direct (internet)* / *direct (local network)*).
 
 ### Known constraints for the tester
 
-- Both apps must be running; the connection is held by the foreground service, so the screen
-  may be off. Force-stopping either app ends the link until it is opened again. A file
-  transfer pauses with the link and resumes after reconnection while the history is intact.
+- Both apps must be running while the message or file travels. With **Background connection**
+  enabled, the foreground service keeps the link alive with the screen off; with it off, Knot
+  keeps the link for a short grace period after the last screen closes. Force-stopping either
+  app ends the link until it is opened again. A file transfer pauses with the link and resumes
+  after reconnection while the history is intact.
+- Only one contact is connected at a time. Switching contacts cancels in-flight transfers for
+  the previous contact and starts discovery for the newly selected one; queued messages remain
+  in that contact's own outbox.
 - The receiver needs free space for the file plus an 8 MiB safety margin; the UI rejects the
   offer cleanly when space is insufficient. Providers that cannot report a size also need
   space for a temporary app-private copy on the sender.

@@ -1,15 +1,36 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="brand_primary">#1F6FEB</color>
+    <!-- Brand -->
+    <color name="brand_primary">#2563EB</color>
     <color name="brand_on_primary">#FFFFFF</color>
-    <color name="bubble_out">#1F6FEB</color>
+    <color name="brand_primary_dark">#1E40AF</color>
+    <color name="brand_container">#DBEAFE</color>
+    <color name="on_brand_container">#1E3A8A</color>
+
+    <!-- Surfaces -->
+    <color name="surface_background">#F7F9FC</color>
+    <color name="surface_card">#FFFFFF</color>
+    <color name="surface_variant">#EEF2F7</color>
+    <color name="on_surface">#0F172A</color>
+    <color name="on_surface_variant">#5B6472</color>
+    <color name="outline_soft">#DFE5EE</color>
+
+    <!-- Messages -->
+    <color name="bubble_out">#2563EB</color>
     <color name="bubble_out_text">#FFFFFF</color>
-    <color name="bubble_in">#E7EDF7</color>
+    <color name="bubble_in">#EBF0F7</color>
     <color name="bubble_in_text">#101827</color>
-    <color name="status_ok">#1B8A5A</color>
-    <color name="status_warn">#B26A00</color>
+
+    <!-- Status -->
+    <color name="status_ok">#15803D</color>
+    <color name="status_warn">#B45309</color>
     <color name="status_error">#B3261E</color>
-    <color name="status_idle">#6B7280</color>
-    <color name="code_background">#F1F4FA</color>
-    <color name="launcher_background">#0B2A5B</color>
+    <color name="status_idle">#64748B</color>
+
+    <!-- Detail accents -->
+    <color name="avatar_soft_bg">#DBEAFE</color>
+    <color name="avatar_soft_text">#1D4ED8</color>
+    <color name="code_background">#F1F5F9</color>
+    <color name="hero_gradient_start">#1D4ED8</color>
+    <color name="hero_gradient_end">#0B1220</color>
 </resources>
