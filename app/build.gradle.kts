@@ -23,10 +23,10 @@ android {
         applicationId = "dev.twoperson.messenger"
         minSdk = 26
         targetSdk = 34
-        // 2 / 1.1.0: tabbed contacts redesign. The package id and signing key stay stable
-        // so an existing 1.0.0 install can be upgraded in place.
-        versionCode = 2
-        versionName = "1.1.0"
+        // 4 / 1.2.1: connected status names the route that actually carried the link. The
+        // package id and signing key stay stable so an existing install can be upgraded.
+        versionCode = 4
+        versionName = "1.2.1"
         vectorDrawables.useSupportLibrary = true
     }
 

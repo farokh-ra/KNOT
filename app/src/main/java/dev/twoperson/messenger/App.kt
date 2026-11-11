@@ -27,6 +27,7 @@ class AppContainer(context: Context, val settings: SettingsStore) {
         context,
         secureStore,
         repository,
+        settings,
         onIncomingMessage = { message -> notifier.onIncoming(message) }
     )
 

@@ -117,6 +117,7 @@
     <string name="chat_empty">No messages yet. Messages you send while offline stay queued on this device.</string>
     <string name="chat_banner_reconnecting">Reconnecting directly — messages and files stay queued on this device</string>
     <string name="chat_banner_unable">Direct connection unavailable on these networks</string>
+    <string name="chat_banner_unable_method">Unable to connect via %1$s — try another method</string>
     <string name="chat_clear_confirm_title">Clear conversation?</string>
     <string name="chat_clear_confirm_message">This deletes the message history stored on this device. It cannot be undone.</string>
     <string name="chat_clear_confirm_ok">Clear</string>
@@ -125,6 +126,12 @@
     <string name="chat_jump_latest">Jump to latest message</string>
     <string name="chat_menu_clear">Clear conversation</string>
     <string name="chat_menu_info">Contact info</string>
+    <string name="chat_connection_method">Connect via %1$s</string>
+    <string name="chat_connection_method_dialog">Choose a connection method</string>
+    <string name="chat_connection_method_updated">Trying %1$s</string>
+    <string name="chat_connection_method_no_endpoint">No saved endpoint yet. Connect once with another method first.</string>
+    <string name="chat_menu_connection_method">Connection method</string>
+    <string name="chat_menu_connection_method_value">Connection method: %1$s</string>
     <string name="chat_file_open">Open file</string>
     <string name="chat_file_open_failed">No app can open this file.</string>
     <string name="chat_file_not_ready">This file is still transferring.</string>
@@ -168,12 +175,29 @@
     <string name="pairing_paired">Paired. You can start chatting.</string>
     <string name="pairing_missing_contact">Choose a contact before pairing.</string>
 
+    <!-- Connection methods -->
+    <string name="connection_method_automatic">Automatic</string>
+    <string name="connection_method_lan">Local network</string>
+    <string name="connection_method_udp_tracker">UDP tracker</string>
+    <string name="connection_method_dht">BitTorrent DHT</string>
+    <string name="connection_method_last_endpoint">Last known endpoint</string>
+
+    <string name="connection_method_automatic_dialog">Automatic — try every method</string>
+    <string name="connection_method_lan_dialog">Local network — LAN beacon only</string>
+    <string name="connection_method_udp_tracker_dialog">UDP tracker — BEP 15 + STUN</string>
+    <string name="connection_method_dht_dialog">BitTorrent DHT — public DHT nodes</string>
+    <string name="connection_method_last_endpoint_dialog">Last known endpoint — no discovery</string>
+
     <!-- Connection states -->
     <string name="state_not_paired">Not paired</string>
     <string name="state_discovering">Searching for the other device…</string>
     <string name="state_connecting">Establishing a direct connection…</string>
     <string name="state_connected_internet">Connected — direct over the internet</string>
     <string name="state_connected_lan">Connected — direct on the local network</string>
+    <string name="state_connected_via_lan">Connected via local network</string>
+    <string name="state_connected_via_udp_tracker">Connected via UDP tracker</string>
+    <string name="state_connected_via_dht">Connected via BitTorrent DHT</string>
+    <string name="state_connected_via_last_endpoint">Connected via last known endpoint</string>
     <string name="state_disconnected">Disconnected — retrying</string>
     <string name="state_unable">Unable to connect directly</string>
 

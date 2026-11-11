@@ -35,9 +35,14 @@ class PublicRendezvous(
         localPort: Int,
         budgetMs: Long = 6_000
     ): List<InetSocketAddress> {
-        val endpoint = stun.publicEndpoint()
+        val endpoint = stun.publicEndpoint(STUN_BUDGET_MS)
         val announcePort = endpoint?.port ?: localPort
         if (announcePort <= 0) return emptyList()
         return trackers.discover(topic, announcePort, budgetMs)
+    }
+
+    companion object {
+        /** Keep the STUN lookup short so a blocked server cannot delay the tracker announce. */
+        private const val STUN_BUDGET_MS = 1_500L
     }
 }

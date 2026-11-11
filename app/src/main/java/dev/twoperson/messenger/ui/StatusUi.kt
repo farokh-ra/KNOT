@@ -3,7 +3,9 @@ package dev.twoperson.messenger.ui
 import androidx.annotation.ColorRes
 import androidx.annotation.StringRes
 import dev.twoperson.messenger.R
+import dev.twoperson.messenger.data.ConnectionMethod
 import dev.twoperson.messenger.data.Contact
+import dev.twoperson.messenger.engine.ConnectionRoute
 import dev.twoperson.messenger.engine.ConnectionState
 import dev.twoperson.messenger.engine.ConnectionStatus
 import dev.twoperson.messenger.engine.DirectKind
@@ -19,16 +21,40 @@ object StatusUi {
         ConnectionState.DISCOVERING -> Style(R.string.state_discovering, R.color.status_warn)
         ConnectionState.CONNECTING -> Style(R.string.state_connecting, R.color.status_warn)
         ConnectionState.CONNECTED -> Style(
-            if (status.direct == DirectKind.LOCAL_NETWORK) {
-                R.string.state_connected_lan
-            } else {
-                R.string.state_connected_internet
+            when (status.route) {
+                ConnectionRoute.LAN -> R.string.state_connected_via_lan
+                ConnectionRoute.UDP_TRACKER -> R.string.state_connected_via_udp_tracker
+                ConnectionRoute.DHT -> R.string.state_connected_via_dht
+                ConnectionRoute.LAST_ENDPOINT -> R.string.state_connected_via_last_endpoint
+                null -> if (status.direct == DirectKind.LOCAL_NETWORK) {
+                    R.string.state_connected_lan
+                } else {
+                    R.string.state_connected_internet
+                }
             },
             R.color.status_ok
         )
 
         ConnectionState.DISCONNECTED -> Style(R.string.state_disconnected, R.color.status_warn)
         ConnectionState.UNABLE_TO_CONNECT -> Style(R.string.state_unable, R.color.status_error)
+    }
+
+    @StringRes
+    fun connectionMethodLabel(method: ConnectionMethod): Int = when (method) {
+        ConnectionMethod.AUTOMATIC -> R.string.connection_method_automatic
+        ConnectionMethod.LAN -> R.string.connection_method_lan
+        ConnectionMethod.UDP_TRACKER -> R.string.connection_method_udp_tracker
+        ConnectionMethod.DHT -> R.string.connection_method_dht
+        ConnectionMethod.LAST_ENDPOINT -> R.string.connection_method_last_endpoint
+    }
+
+    @StringRes
+    fun connectionMethodDialogLabel(method: ConnectionMethod): Int = when (method) {
+        ConnectionMethod.AUTOMATIC -> R.string.connection_method_automatic_dialog
+        ConnectionMethod.LAN -> R.string.connection_method_lan_dialog
+        ConnectionMethod.UDP_TRACKER -> R.string.connection_method_udp_tracker_dialog
+        ConnectionMethod.DHT -> R.string.connection_method_dht_dialog
+        ConnectionMethod.LAST_ENDPOINT -> R.string.connection_method_last_endpoint_dialog
     }
 
     /** A compact state for a contacts-list chip. */

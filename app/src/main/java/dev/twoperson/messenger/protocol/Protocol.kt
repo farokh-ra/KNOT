@@ -26,6 +26,18 @@ object Protocol {
     const val TYPE_FILE_ACK: Int = 7
     const val TYPE_FILE_DONE: Int = 8
 
+    /**
+     * Sent by the side that opened the link so the other side can report the route that
+     * actually worked. Unknown application message types are dropped, so older builds can
+     * ignore this without failing the handshake.
+     */
+    const val TYPE_ROUTE_HINT: Int = 9
+
+    const val ROUTE_LAN: Int = 1
+    const val ROUTE_UDP_TRACKER: Int = 2
+    const val ROUTE_DHT: Int = 3
+    const val ROUTE_LAST_ENDPOINT: Int = 4
+
     /** Failure codes carried by [AppMessage.FileDone]. */
     const val FILE_DONE_REJECTED: Int = 1
     const val FILE_DONE_INTEGRITY: Int = 2
@@ -91,6 +103,12 @@ sealed interface AppMessage {
 
         override fun hashCode(): Int = messageId.contentHashCode()
     }
+
+    /**
+     * Tells the other side which discovery route opened this link. It is advisory UI data
+     * carried inside the authenticated channel; it never influences routing or security.
+     */
+    data class RouteHint(val route: Int) : AppMessage
 
     /**
      * Announces an outgoing file and re-announces it after every reconnect. The receiver replies
@@ -220,6 +238,13 @@ object AppCodec {
                 .array()
         }
 
+        is AppMessage.RouteHint -> {
+            require(
+                message.route in Protocol.ROUTE_LAN..Protocol.ROUTE_LAST_ENDPOINT
+            ) { "bad route" }
+            byteArrayOf(Protocol.TYPE_ROUTE_HINT.toByte(), message.route.toByte())
+        }
+
         is AppMessage.FileOffer -> {
             require(message.transferId.size == Protocol.TRANSFER_ID_BYTES) { "bad transfer id" }
             require(message.messageId.size == Protocol.MESSAGE_ID_BYTES) { "bad message id" }
@@ -311,6 +336,7 @@ object AppCodec {
                 Protocol.TYPE_FILE_END -> decodeFileEnd(buffer)
                 Protocol.TYPE_FILE_ACK -> decodeFileAck(buffer)
                 Protocol.TYPE_FILE_DONE -> decodeFileDone(buffer)
+                Protocol.TYPE_ROUTE_HINT -> decodeRouteHint(buffer)
                 else -> null
             }
         } catch (e: RuntimeException) {
@@ -330,6 +356,13 @@ object AppCodec {
         val name = decodeUtf8(nameBytes) ?: return null
         val sanitized = name.filterNot { it.isISOControl() }.trim()
         return AppMessage.Hello(version, deviceId, publicKey, sanitized)
+    }
+
+    private fun decodeRouteHint(buffer: ByteBuffer): AppMessage.RouteHint? {
+        if (buffer.remaining() != 1) return null
+        val route = buffer.get().toInt() and 0xFF
+        if (route !in Protocol.ROUTE_LAN..Protocol.ROUTE_LAST_ENDPOINT) return null
+        return AppMessage.RouteHint(route)
     }
 
     private fun decodeText(buffer: ByteBuffer): AppMessage.Text? {
