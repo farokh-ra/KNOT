@@ -30,7 +30,7 @@ import kotlin.coroutines.cancellation.CancellationException
  */
 class TrackerRendezvous(
     private val socket: DatagramSocket,
-    trackers: List<InetSocketAddress> = defaultTrackers(),
+    trackers: List<InetSocketAddress>? = null,
     private val log: (String) -> Unit = {}
 ) {
 
@@ -56,7 +56,11 @@ class TrackerRendezvous(
     private val txCounter = AtomicInteger(random.nextInt())
     private val peerId: ByteArray = ByteArray(PEER_ID_BYTES).also { random.nextBytes(it) }
     private val announceKey: Int = random.nextInt()
-    private val trackerList: List<InetSocketAddress> = trackers
+
+    /** DNS is resolved on first use, not on the engine's startup path. */
+    private val trackerList: List<InetSocketAddress> by lazy {
+        trackers ?: defaultTrackers()
+    }
 
     /** Routes a datagram from the shared socket. Returns true when it was a tracker reply. */
     fun onPacket(data: ByteArray, from: InetSocketAddress): Boolean {
@@ -258,14 +262,20 @@ class TrackerRendezvous(
         private const val COMPACT_PEER_BYTES = 6
         private const val TOPIC_BYTES = 20
         private const val PEER_ID_BYTES = 20
-        private const val CONNECT_TIMEOUT_MS = 2_000L
-        private const val ANNOUNCE_TIMEOUT_MS = 2_500L
+        private const val CONNECT_TIMEOUT_MS = 1_500L
+        private const val ANNOUNCE_TIMEOUT_MS = 2_000L
         private const val CONNECTION_TTL_MS = 50_000L
         private const val BASE_RETRY_MS = 15_000L
         private const val MAX_RETRY_MS = 120_000L
         private const val MAX_BACKOFF_SHIFT = 3
         private const val MIN_ANNOUNCE_GAP_MS = 10_000L
-        private const val MAX_ANNOUNCE_GAP_MS = 300_000L
+
+        /**
+         * Trackers ask for a ~30 minute interval, but that is meant for torrent clients that
+         * stay online for hours. A two-device chat has to notice the other phone appearing
+         * within seconds, not minutes, so cap the wait while discovery is running.
+         */
+        private const val MAX_ANNOUNCE_GAP_MS = 20_000L
 
         /**
          * Public UDP trackers reachable on ports that carriers do not block. They only

@@ -62,7 +62,7 @@ class DhtClient(
     }
 
     /** Seeds the routing table from the public bootstrap nodes. */
-    suspend fun bootstrap(timeoutMs: Long = 4_000): Boolean {
+    suspend fun bootstrap(timeoutMs: Long = 3_000): Boolean {
         if (bootstrapped.get()) return true
         if (nodesSnapshot().size >= 8) {
             bootstrapped.set(true)

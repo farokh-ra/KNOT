@@ -8,10 +8,12 @@ import android.net.wifi.WifiManager
 import android.os.Build
 import dev.twoperson.messenger.crypto.Crypto
 import dev.twoperson.messenger.crypto.Invite
+import dev.twoperson.messenger.data.ConnectionMethod
 import dev.twoperson.messenger.data.Message
 import dev.twoperson.messenger.data.MessageRepository
 import dev.twoperson.messenger.data.MessageState
 import dev.twoperson.messenger.data.SecureStore
+import dev.twoperson.messenger.data.SettingsStore
 import dev.twoperson.messenger.net.Handshake
 import dev.twoperson.messenger.net.LanBeacon
 import dev.twoperson.messenger.net.PeerLink
@@ -47,6 +49,7 @@ import java.net.DatagramSocket
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.util.Random
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.cancellation.CancellationException
 
 enum class ConnectionState { NOT_PAIRED, IDLE, DISCOVERING, CONNECTING, CONNECTED, DISCONNECTED, UNABLE_TO_CONNECT }
@@ -57,7 +60,9 @@ data class ConnectionStatus(
     val state: ConnectionState = ConnectionState.IDLE,
     val direct: DirectKind? = null,
     val detail: String? = null,
-    val peerName: String? = null
+    val peerName: String? = null,
+    /** Concrete discovery route that produced the live link, when known. */
+    val route: ConnectionRoute? = null
 )
 
 sealed interface EngineEvent {
@@ -87,6 +92,7 @@ class ConnectionEngine(
     context: Context,
     private val secureStore: SecureStore,
     private val repository: MessageRepository,
+    private val settings: SettingsStore,
     /** Invoked only after a new incoming message (or completed file) was durably stored. */
     private val onIncomingMessage: suspend (Message) -> Unit = {}
 ) {
@@ -98,6 +104,12 @@ class ConnectionEngine(
         val contactId: String,
         val link: PeerLink?,
         val message: AppMessage
+    )
+
+    /** An endpoint announced by one of the discovery loops, tagged with its provenance. */
+    private data class DiscoveryCandidate(
+        val endpoint: InetSocketAddress,
+        val route: ConnectionRoute
     )
 
     /**
@@ -190,7 +202,16 @@ class ConnectionEngine(
     private var activeLink: PeerLink? = null
 
     @Volatile
-    private var candidateSink: ((InetSocketAddress) -> Unit)? = null
+    private var candidateSink: ((DiscoveryCandidate) -> Unit)? = null
+
+    /**
+     * Recent discovery results, used to label an incoming initiation when the endpoint was
+     * also announced to this side. Cleared for every fresh discovery round.
+     */
+    private val candidateRoutes = ConcurrentHashMap<InetSocketAddress, ConnectionRoute>()
+
+    /** Route attached to each live/handshaking link; the map is small and short-lived. */
+    private val linkRoutes = ConcurrentHashMap<PeerLink, ConnectionRoute>()
 
     /** Last endpoint that carried an authenticated frame; used for instant reconnects. */
     @Volatile
@@ -264,6 +285,15 @@ class ConnectionEngine(
     }
 
     /**
+     * Applies the user's preferred connection method. Discovery is restarted immediately so the
+     * selected method is used for the next attempt instead of waiting for a reconnect.
+     */
+    fun setConnectionMethod(method: ConnectionMethod) {
+        settings.setConnectionMethod(method)
+        scope.launch { restartRuntime(force = true) }
+    }
+
+    /**
      * Makes one contact the connection target. The engine only keeps one direct link at a time,
      * so switching contacts closes the previous runtime and starts discovery for the new one.
      */
@@ -278,6 +308,7 @@ class ConnectionEngine(
     fun createInvitation(contactId: String): String {
         val secret = Invite.newSecret()
         secureStore.saveInviteSecret(contactId, secret)
+        settings.clearLastPeerEndpoint(contactId)
         scope.launch {
             fileTransfers.cancelAll()
             repository.markInvitation(contactId, true)
@@ -295,6 +326,7 @@ class ConnectionEngine(
     fun joinInvitation(contactId: String, code: String): Boolean {
         val secret = Invite.decode(code) ?: return false
         secureStore.saveInviteSecret(contactId, secret)
+        settings.clearLastPeerEndpoint(contactId)
         scope.launch {
             fileTransfers.cancelAll()
             repository.markInvitation(contactId, true)
@@ -311,6 +343,7 @@ class ConnectionEngine(
     /** Removes the invitation and pinned identity but keeps local history for that contact. */
     fun forgetPartner(contactId: String) {
         secureStore.saveInviteSecret(contactId, null)
+        settings.clearLastPeerEndpoint(contactId)
         scope.launch {
             repository.markInvitation(contactId, false)
             repository.resetContactPairing(contactId)
@@ -331,6 +364,7 @@ class ConnectionEngine(
             stopResources()
         }
         secureStore.saveInviteSecret(contactId, null)
+        settings.clearLastPeerEndpoint(contactId)
         val removed = repository.deleteContact(contactId)
         fileTransfers.deleteLocalFiles(removed)
         if (wasActive) {
@@ -351,6 +385,7 @@ class ConnectionEngine(
         repository.contacts.value.forEach { contact ->
             secureStore.saveInviteSecret(contact.id, null)
         }
+        settings.clearAllLastPeerEndpoints()
         val removed = repository.deleteAllContacts()
         fileTransfers.deleteLocalFiles(removed)
         pinnedPeerHex = null
@@ -471,6 +506,12 @@ class ConnectionEngine(
                 engineContactId = contactId
                 val authKey = Invite.authKey(secret)
                 val topic = Invite.topic(secret)
+                val method = settings.current.connectionMethod
+                // The in-memory hint is freshest; otherwise reuse the endpoint that worked
+                // before the process restarted.
+                if (lastPeerEndpoint == null) {
+                    lastPeerEndpoint = settings.lastPeerEndpoint(contactId)
+                }
 
                 ensureTransport()
                 val currentTransport = transport
@@ -488,34 +529,53 @@ class ConnectionEngine(
                 pinnedPeerHex = active.publicKeyHex
                 routingAuthKey = authKey
                 routingSocket = socket
-                startLanBeacon(topic)
-                val dhtClient = dhtClientFor(socket)
-                val rendezvousClient = rendezvousFor(socket)
+                candidateRoutes.clear()
+                val candidates = Channel<DiscoveryCandidate>(Channel.UNLIMITED)
+                candidateSink = { candidate -> candidates.trySend(candidate) }
+                if (method.usesLanBeacon) startLanBeacon(topic)
+                val dhtClient = if (method.usesDht) dhtClientFor(socket) else null
+                val rendezvousClient = if (method.usesUdpTracker) rendezvousFor(socket) else null
                 _status.value = ConnectionStatus(ConnectionState.DISCOVERING)
 
-                val candidates = Channel<InetSocketAddress>(Channel.UNLIMITED)
-                candidateSink = { address -> candidates.trySend(address) }
                 val discoveryJob = scope.launch {
                     coroutineScope {
-                        launch { dhtDiscoveryLoop(topic, currentTransport, dhtClient, candidates) }
-                        launch {
-                            rendezvousDiscoveryLoop(topic, currentTransport, rendezvousClient, candidates)
+                        if (dhtClient != null) {
+                            launch { dhtDiscoveryLoop(topic, currentTransport, dhtClient, candidates) }
+                        }
+                        if (rendezvousClient != null) {
+                            launch {
+                                rendezvousDiscoveryLoop(
+                                    topic, currentTransport, rendezvousClient, candidates
+                                )
+                            }
                         }
                     }
                 }
 
                 var connectedLink: PeerLink? = null
+                var connectedRoute: ConnectionRoute? = null
                 val tried = HashMap<InetSocketAddress, Long>()
                 try {
                     // Reconnect fast path: the endpoint that last carried authenticated traffic
                     // is almost always still correct, and after a peer restart its initiation
                     // already told us the new address. Waiting for a fresh lookup costs seconds.
-                    lastPeerEndpoint?.let { hint ->
-                        _status.value = ConnectionStatus(ConnectionState.CONNECTING)
-                        tried[hint] = System.currentTimeMillis()
-                        connectedLink = attemptConnection(
-                            hint, authKey, socket, QUICK_HANDSHAKE_MS, contactId
-                        )
+                    if (method.usesLastEndpointHint) {
+                        lastPeerEndpoint?.let { hint ->
+                            _status.value = ConnectionStatus(ConnectionState.CONNECTING)
+                            tried[hint] = System.currentTimeMillis()
+                            candidateRoutes[hint] = ConnectionRoute.LAST_ENDPOINT
+                            connectedLink = attemptConnection(
+                                hint,
+                                authKey,
+                                socket,
+                                QUICK_HANDSHAKE_MS,
+                                contactId,
+                                ConnectionRoute.LAST_ENDPOINT
+                            )
+                            if (connectedLink != null) {
+                                connectedRoute = ConnectionRoute.LAST_ENDPOINT
+                            }
+                        }
                     }
 
                     var phaseStart = System.currentTimeMillis()
@@ -523,6 +583,7 @@ class ConnectionEngine(
                         val adopted = activeLink
                         if (adopted != null && adopted.isReady) {
                             connectedLink = adopted
+                            connectedRoute = linkRoutes[adopted]
                             break
                         }
                         val candidate = withTimeoutOrNull(CANDIDATE_POLL_MS) { candidates.receive() }
@@ -535,12 +596,18 @@ class ConnectionEngine(
                             continue
                         }
                         if (repository.activeContact.value?.id != contactId) break
-                        if (!isDialable(candidate, socket, rendezvousClient, tried)) continue
-                        tried[candidate] = System.currentTimeMillis()
+                        if (!isDialable(candidate.endpoint, socket, rendezvousClient, tried)) continue
+                        tried[candidate.endpoint] = System.currentTimeMillis()
                         _status.value = ConnectionStatus(ConnectionState.CONNECTING)
                         connectedLink = attemptConnection(
-                            candidate, authKey, socket, HANDSHAKE_BUDGET_MS, contactId
+                            candidate.endpoint,
+                            authKey,
+                            socket,
+                            HANDSHAKE_BUDGET_MS,
+                            contactId,
+                            candidate.route
                         )
+                        if (connectedLink != null) connectedRoute = candidate.route
                         phaseStart = System.currentTimeMillis()
                     }
                 } finally {
@@ -567,9 +634,11 @@ class ConnectionEngine(
 
                 backoff = INITIAL_BACKOFF_MS
                 val endpoint = connected.remoteAddress
+                rememberPeerEndpoint(contactId, endpoint)
                 _status.value = ConnectionStatus(
                     ConnectionState.CONNECTED,
-                    direct = if (isLocalAddress(endpoint.address)) DirectKind.LOCAL_NETWORK else DirectKind.INTERNET
+                    direct = if (isLocalAddress(endpoint.address)) DirectKind.LOCAL_NETWORK else DirectKind.INTERNET,
+                    route = connectedRoute ?: linkRoutes[connected]
                 )
                 repository.resetFailedToPending(contactId)
                 fileTransfers.onLinkReady(connected, contactId)
@@ -580,7 +649,7 @@ class ConnectionEngine(
                 if (activeLink === connected) activeLink = null
                 // Keep the peer endpoint the link last used: after a NAT rebind or a peer
                 // restart this is the address that actually works.
-                lastPeerEndpoint = connected.remoteAddress
+                rememberPeerEndpoint(contactId, connected.remoteAddress)
                 // The peer acknowledged the handshake but then stopped acknowledging data for
                 // ~45s: report the honest failed state instead of pretending it is in transit.
                 // Nothing is deleted, and the next direct connection retries the same IDs.
@@ -605,14 +674,14 @@ class ConnectionEngine(
         topic: ByteArray,
         currentTransport: UdpTransport,
         client: DhtClient,
-        candidates: Channel<InetSocketAddress>
+        candidates: Channel<DiscoveryCandidate>
     ) {
         while (isCoroutineActive()) {
             val socket = currentTransport.socketOrNull() ?: return
             try {
                 if (client.bootstrap()) {
                     client.discover(topic, socket.localPort, DISCOVERY_BUDGET_MS)
-                        .forEach { candidates.trySend(it) }
+                        .forEach { offerCandidate(it, ConnectionRoute.DHT) }
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -627,13 +696,13 @@ class ConnectionEngine(
         topic: ByteArray,
         currentTransport: UdpTransport,
         client: PublicRendezvous,
-        candidates: Channel<InetSocketAddress>
+        candidates: Channel<DiscoveryCandidate>
     ) {
         while (isCoroutineActive()) {
             val socket = currentTransport.socketOrNull() ?: return
             try {
                 client.discover(topic, socket.localPort, RENDEZVOUS_BUDGET_MS)
-                    .forEach { candidates.trySend(it) }
+                    .forEach { offerCandidate(it, ConnectionRoute.UDP_TRACKER) }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -643,12 +712,22 @@ class ConnectionEngine(
         }
     }
 
+    /**
+     * Publishes an endpoint to the dialing loop and remembers its provenance. The map also
+     * lets an incoming initiation from the same endpoint report the same route.
+     */
+    private fun offerCandidate(endpoint: InetSocketAddress, route: ConnectionRoute) {
+        candidateRoutes[endpoint] = route
+        candidateSink?.invoke(DiscoveryCandidate(endpoint, route))
+    }
+
     private suspend fun attemptConnection(
         candidate: InetSocketAddress,
         authKey: ByteArray,
         socket: DatagramSocket,
         budgetMs: Long,
-        contactId: String
+        contactId: String,
+        route: ConnectionRoute?
     ): PeerLink? {
         if (!candidate.address.isReachableAddress() || candidate.port <= 0) return null
         activeLink?.let { existing ->
@@ -666,6 +745,7 @@ class ConnectionEngine(
 
             override fun onClosed(reason: String) {
                 if (activeLink === linkRef) activeLink = null
+                linkRoutes.remove(linkRef)
             }
         }
 
@@ -673,13 +753,14 @@ class ConnectionEngine(
         val link = PeerLink(socket, candidate, handshake, scope, listener)
         linkRef = link
         activeLink = link
+        if (route != null) linkRoutes[link] = route
         val identity = link.awaitReadyOrSuperseded(budgetMs)
         if (identity == null || activeLink !== link) {
             if (activeLink === link) activeLink = null
             link.close("handshake_failed")
             return null
         }
-        if (!finalizeLink(link, identity, contactId)) {
+        if (!finalizeLink(link, identity, contactId, route)) {
             if (activeLink === link) activeLink = null
             return null
         }
@@ -705,7 +786,12 @@ class ConnectionEngine(
     }
 
     /** Pins the peer on first contact, rejects a different identity, then sends Hello. */
-    private suspend fun finalizeLink(link: PeerLink, identity: ByteArray, contactId: String): Boolean {
+    private suspend fun finalizeLink(
+        link: PeerLink,
+        identity: ByteArray,
+        contactId: String,
+        route: ConnectionRoute?
+    ): Boolean {
         val identityHex = Hex.encode(identity)
         val pinned = repository.contact(contactId)
         if (pinned?.publicKeyHex != null && pinned.publicKeyHex != identityHex) {
@@ -726,6 +812,9 @@ class ConnectionEngine(
                 deviceName
             )
         )
+        // The receiver uses this to name the actual route in its connected status. Older
+        // builds drop the unknown message type instead of failing the handshake.
+        route?.let { link.sendApplicationMessage(AppMessage.RouteHint(it.wireCode)) }
         return true
     }
 
@@ -755,6 +844,23 @@ class ConnectionEngine(
 
             is AppMessage.Ack -> {
                 repository.setState(Hex.encode(message.messageId), MessageState.DELIVERED)
+            }
+
+            is AppMessage.RouteHint -> {
+                val route = ConnectionRoute.fromWireCode(message.route) ?: return
+                val target = link ?: activeLink ?: return
+                // Never replace a route this side observed itself; only fill a gap when an
+                // incoming link could not be attributed locally.
+                linkRoutes.putIfAbsent(target, route)
+                if (target === activeLink) {
+                    _status.update { current ->
+                        if (current.state == ConnectionState.CONNECTED && current.route == null) {
+                            current.copy(route = route)
+                        } else {
+                            current
+                        }
+                    }
+                }
             }
 
             is AppMessage.Hello -> {
@@ -962,10 +1068,12 @@ class ConnectionEngine(
                         incomingFrom = null
                     }
                 }
+                linkRoutes.remove(link)
                 if (activeLink === link) activeLink = null
             }
         }
         link = PeerLink(socket, from, handshake, scope, listener)
+        routeForIncoming(from)?.let { linkRoutes[link] = it }
         return link
     }
 
@@ -987,14 +1095,16 @@ class ConnectionEngine(
                 incomingFrom = null
             }
         }
-        if (!finalizeLink(link, identity, contactId)) {
+        if (!finalizeLink(link, identity, contactId, linkRoutes[link])) {
             if (activeLink === link) activeLink = null
             return
         }
         val endpoint = link.remoteAddress
+        rememberPeerEndpoint(contactId, endpoint)
         _status.value = ConnectionStatus(
             ConnectionState.CONNECTED,
-            direct = if (isLocalAddress(endpoint.address)) DirectKind.LOCAL_NETWORK else DirectKind.INTERNET
+            direct = if (isLocalAddress(endpoint.address)) DirectKind.LOCAL_NETWORK else DirectKind.INTERNET,
+            route = linkRoutes[link]
         )
         // The main loop observes the ready link and runs the outbox flush once, so a message
         // is never enqueued twice by two concurrent flushes.
@@ -1004,7 +1114,7 @@ class ConnectionEngine(
     private fun isDialable(
         candidate: InetSocketAddress,
         socket: DatagramSocket,
-        client: PublicRendezvous,
+        client: PublicRendezvous?,
         tried: MutableMap<InetSocketAddress, Long>
     ): Boolean {
         if (candidate.port <= 0 || !candidate.address.isReachableAddress()) return false
@@ -1014,7 +1124,7 @@ class ConnectionEngine(
         if (tried.size > MAX_TRACKED_CANDIDATES) {
             tried.keys.removeIf { key -> now - (tried[key] ?: now) > CANDIDATE_RETRY_MS * 2 }
         }
-        val ownPublic = client.cachedPublicEndpoint()
+        val ownPublic = client?.cachedPublicEndpoint()
         if (ownPublic != null && candidate == ownPublic) return false
         if (candidate.port == socket.localPort) {
             if (candidate.address.isLoopbackAddress || isLocalAddress(candidate.address)) return false
@@ -1023,13 +1133,28 @@ class ConnectionEngine(
         return true
     }
 
+    private fun rememberPeerEndpoint(contactId: String, endpoint: InetSocketAddress) {
+        if (endpoint.port <= 0 || !endpoint.address.isReachableAddress()) return
+        lastPeerEndpoint = endpoint
+        settings.setLastPeerEndpoint(contactId, endpoint)
+    }
+
+    /**
+     * Attributes an incoming initiation. The endpoint may have been announced by one of this
+     * side's discovery loops; failing that, a private source address can only be the LAN.
+     */
+    private fun routeForIncoming(from: InetSocketAddress): ConnectionRoute? =
+        candidateRoutes[from] ?: if (isLocalAddress(from.address)) ConnectionRoute.LAN else null
+
     private fun startLanBeacon(topic: ByteArray) {
         if (lanBeacon != null) return
         acquireMulticastLock()
         val beacon = LanBeacon(
             topic = topic,
             primaryPortProvider = { transport?.localPort ?: 0 },
-            onPeer = { address, port -> candidateSink?.invoke(InetSocketAddress(address, port)) }
+            onPeer = { address, port ->
+                offerCandidate(InetSocketAddress(address, port), ConnectionRoute.LAN)
+            }
         )
         beacon.start()
         lanBeacon = beacon
@@ -1103,6 +1228,13 @@ class ConnectionEngine(
             }
             lastRestartAt = now
             stopResources()
+            if (foregroundCount > 0) {
+                // Give immediate feedback when the user switches method instead of leaving
+                // the old "connected" or "unable" state on screen until the loop restarts.
+                _status.value = ConnectionStatus(
+                    if (isConfigured()) ConnectionState.DISCOVERING else ConnectionState.NOT_PAIRED
+                )
+            }
             delay(RESTART_SETTLE_MS)
             if (foregroundCount > 0) start()
         }
@@ -1113,6 +1245,8 @@ class ConnectionEngine(
         loopJob = null
         engineContactId = null
         candidateSink = null
+        candidateRoutes.clear()
+        linkRoutes.clear()
         routingAuthKey = null
         routingSocket = null
         activeLink?.let { fileTransfers.onLinkClosed(it) }
@@ -1167,11 +1301,11 @@ class ConnectionEngine(
         private const val CANDIDATE_RETRY_MS = 15_000L
         private const val MAX_TRACKED_CANDIDATES = 64
         private const val READY_POLL_MS = 500L
-        private const val UNABLE_AFTER_MS = 40_000L
+        private const val UNABLE_AFTER_MS = 30_000L
         private const val HANDSHAKE_BUDGET_MS = 6_000L
-        private const val QUICK_HANDSHAKE_MS = 4_000L
+        private const val QUICK_HANDSHAKE_MS = 2_000L
         private const val INITIAL_BACKOFF_MS = 1_500L
-        private const val MAX_BACKOFF_MS = 30_000L
+        private const val MAX_BACKOFF_MS = 15_000L
         private const val RECONNECT_PAUSE_MS = 200L
         private const val RESTART_DEBOUNCE_MS = 3_000L
         private const val RESTART_SETTLE_MS = 250L

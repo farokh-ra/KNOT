@@ -35,6 +35,31 @@ class AppCodecTest {
     }
 
     @Test
+    fun routeHintRoundTripsEveryKnownRoute() {
+        for (route in Protocol.ROUTE_LAN..Protocol.ROUTE_LAST_ENDPOINT) {
+            assertEquals(
+                AppMessage.RouteHint(route),
+                AppCodec.decode(AppCodec.encode(AppMessage.RouteHint(route)))
+            )
+        }
+    }
+
+    @Test
+    fun rejectsUnknownOrMalformedRouteHint() {
+        assertNull(AppCodec.decode(byteArrayOf(Protocol.TYPE_ROUTE_HINT.toByte())))
+        assertNull(AppCodec.decode(byteArrayOf(Protocol.TYPE_ROUTE_HINT.toByte(), 0)))
+        assertNull(
+            AppCodec.decode(
+                byteArrayOf(
+                    Protocol.TYPE_ROUTE_HINT.toByte(),
+                    (Protocol.ROUTE_LAST_ENDPOINT + 1).toByte()
+                )
+            )
+        )
+        assertNull(AppCodec.decode(byteArrayOf(Protocol.TYPE_ROUTE_HINT.toByte(), 1, 2)))
+    }
+
+    @Test
     fun rejectsUnknownType() {
         assertNull(AppCodec.decode(byteArrayOf(99, 1, 2, 3)))
     }

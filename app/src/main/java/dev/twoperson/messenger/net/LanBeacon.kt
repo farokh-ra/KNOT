@@ -154,7 +154,7 @@ class LanBeacon(
 
     companion object {
         const val BEACON_PORT = 41999
-        private const val ANNOUNCE_INTERVAL_MS = 3_000L
+        private const val ANNOUNCE_INTERVAL_MS = 1_000L
         private const val VERSION = 1.toByte()
         private val MAGIC = byteArrayOf('T'.code.toByte(), 'P'.code.toByte(), 'M'.code.toByte(), 'L'.code.toByte())
     }
