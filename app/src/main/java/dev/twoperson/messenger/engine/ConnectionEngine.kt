@@ -8,7 +8,6 @@ import android.net.wifi.WifiManager
 import android.os.Build
 import dev.twoperson.messenger.crypto.Crypto
 import dev.twoperson.messenger.crypto.Invite
-import dev.twoperson.messenger.data.ConnectionMethod
 import dev.twoperson.messenger.data.Message
 import dev.twoperson.messenger.data.MessageRepository
 import dev.twoperson.messenger.data.MessageState
@@ -285,15 +284,6 @@ class ConnectionEngine(
     }
 
     /**
-     * Applies the user's preferred connection method. Discovery is restarted immediately so the
-     * selected method is used for the next attempt instead of waiting for a reconnect.
-     */
-    fun setConnectionMethod(method: ConnectionMethod) {
-        settings.setConnectionMethod(method)
-        scope.launch { restartRuntime(force = true) }
-    }
-
-    /**
      * Makes one contact the connection target. The engine only keeps one direct link at a time,
      * so switching contacts closes the previous runtime and starts discovery for the new one.
      */
@@ -506,7 +496,6 @@ class ConnectionEngine(
                 engineContactId = contactId
                 val authKey = Invite.authKey(secret)
                 val topic = Invite.topic(secret)
-                val method = settings.current.connectionMethod
                 // The in-memory hint is freshest; otherwise reuse the endpoint that worked
                 // before the process restarted.
                 if (lastPeerEndpoint == null) {
@@ -532,22 +521,20 @@ class ConnectionEngine(
                 candidateRoutes.clear()
                 val candidates = Channel<DiscoveryCandidate>(Channel.UNLIMITED)
                 candidateSink = { candidate -> candidates.trySend(candidate) }
-                if (method.usesLanBeacon) startLanBeacon(topic)
-                val dhtClient = if (method.usesDht) dhtClientFor(socket) else null
-                val rendezvousClient = if (method.usesUdpTracker) rendezvousFor(socket) else null
+                // Every device always runs every discovery path. There is no manual method
+                // selection, so the two sides can never be restricted to different paths.
+                startLanBeacon(topic)
+                val dhtClient = dhtClientFor(socket)
+                val rendezvousClient = rendezvousFor(socket)
                 _status.value = ConnectionStatus(ConnectionState.DISCOVERING)
 
                 val discoveryJob = scope.launch {
                     coroutineScope {
-                        if (dhtClient != null) {
-                            launch { dhtDiscoveryLoop(topic, currentTransport, dhtClient, candidates) }
-                        }
-                        if (rendezvousClient != null) {
-                            launch {
-                                rendezvousDiscoveryLoop(
-                                    topic, currentTransport, rendezvousClient, candidates
-                                )
-                            }
+                        launch { dhtDiscoveryLoop(topic, currentTransport, dhtClient, candidates) }
+                        launch {
+                            rendezvousDiscoveryLoop(
+                                topic, currentTransport, rendezvousClient, candidates
+                            )
                         }
                     }
                 }
@@ -556,14 +543,35 @@ class ConnectionEngine(
                 var connectedRoute: ConnectionRoute? = null
                 val tried = HashMap<InetSocketAddress, Long>()
                 try {
-                    // Reconnect fast path: the endpoint that last carried authenticated traffic
-                    // is almost always still correct, and after a peer restart its initiation
-                    // already told us the new address. Waiting for a fresh lookup costs seconds.
-                    if (method.usesLastEndpointHint) {
-                        lastPeerEndpoint?.let { hint ->
-                            _status.value = ConnectionStatus(ConnectionState.CONNECTING)
-                            tried[hint] = System.currentTimeMillis()
+                    var phaseStart = System.currentTimeMillis()
+                    while (isCoroutineActive() && connectedLink == null) {
+                        val adopted = activeLink
+                        if (adopted != null && adopted.isReady) {
+                            connectedLink = adopted
+                            connectedRoute = linkRoutes[adopted]
+                            break
+                        }
+
+                        // Reconnect fast path, retried for as long as the link is down: the
+                        // endpoint that last carried authenticated traffic is usually still
+                        // correct. Both devices run this independently, so a simultaneous
+                        // start still meets in the middle without waiting for discovery.
+                        val hint = lastPeerEndpoint
+                        if (hint != null &&
+                            isDialable(
+                                hint,
+                                socket,
+                                rendezvousClient,
+                                tried,
+                                LAST_ENDPOINT_RETRY_MS
+                            )
+                        ) {
+                            val now = System.currentTimeMillis()
+                            tried[hint] = now
                             candidateRoutes[hint] = ConnectionRoute.LAST_ENDPOINT
+                            if (_status.value.state != ConnectionState.UNABLE_TO_CONNECT) {
+                                _status.value = ConnectionStatus(ConnectionState.CONNECTING)
+                            }
                             connectedLink = attemptConnection(
                                 hint,
                                 authKey,
@@ -574,18 +582,10 @@ class ConnectionEngine(
                             )
                             if (connectedLink != null) {
                                 connectedRoute = ConnectionRoute.LAST_ENDPOINT
+                                break
                             }
                         }
-                    }
 
-                    var phaseStart = System.currentTimeMillis()
-                    while (isCoroutineActive() && connectedLink == null) {
-                        val adopted = activeLink
-                        if (adopted != null && adopted.isReady) {
-                            connectedLink = adopted
-                            connectedRoute = linkRoutes[adopted]
-                            break
-                        }
                         val candidate = withTimeoutOrNull(CANDIDATE_POLL_MS) { candidates.receive() }
                         if (candidate == null) {
                             if (System.currentTimeMillis() - phaseStart > UNABLE_AFTER_MS &&
@@ -1115,12 +1115,13 @@ class ConnectionEngine(
         candidate: InetSocketAddress,
         socket: DatagramSocket,
         client: PublicRendezvous?,
-        tried: MutableMap<InetSocketAddress, Long>
+        tried: MutableMap<InetSocketAddress, Long>,
+        retryAfterMs: Long = CANDIDATE_RETRY_MS
     ): Boolean {
         if (candidate.port <= 0 || !candidate.address.isReachableAddress()) return false
         val now = System.currentTimeMillis()
         val last = tried[candidate]
-        if (last != null && now - last < CANDIDATE_RETRY_MS) return false
+        if (last != null && now - last < retryAfterMs) return false
         if (tried.size > MAX_TRACKED_CANDIDATES) {
             tried.keys.removeIf { key -> now - (tried[key] ?: now) > CANDIDATE_RETRY_MS * 2 }
         }
@@ -1297,8 +1298,9 @@ class ConnectionEngine(
         private const val DISCOVERY_BUDGET_MS = 7_000L
         private const val RENDEZVOUS_INTERVAL_MS = 7_000L
         private const val RENDEZVOUS_BUDGET_MS = 8_000L
-        private const val CANDIDATE_POLL_MS = 2_000L
+        private const val CANDIDATE_POLL_MS = 1_000L
         private const val CANDIDATE_RETRY_MS = 15_000L
+        private const val LAST_ENDPOINT_RETRY_MS = 5_000L
         private const val MAX_TRACKED_CANDIDATES = 64
         private const val READY_POLL_MS = 500L
         private const val UNABLE_AFTER_MS = 30_000L

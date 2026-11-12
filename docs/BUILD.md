@@ -21,7 +21,7 @@ The build was performed on Windows with Git Bash; `local.properties` points at t
 export JAVA_HOME=/path/to/jdk-17-or-newer
 echo "sdk.dir=/path/to/Android/Sdk" > local.properties
 
-./gradlew :app:testDebugUnitTest      # 86 JVM tests
+./gradlew :app:testDebugUnitTest      # 95 JVM tests
 ./gradlew :app:lintDebug              # Android lint report
 ./gradlew :app:assembleDebug          # app/build/outputs/apk/debug/app-debug.apk
 ./gradlew :app:assembleRelease        # app/build/outputs/apk/release/app-release.apk
@@ -57,7 +57,7 @@ $ANDROID_HOME/build-tools/34.0.0/aapt2 dump badging <apk>
 sha256sum <apk>
 ```
 
-Expected: `package: name='dev.twoperson.messenger' versionCode='2' versionName='1.1.0'`,
+Expected: `package: name='dev.twoperson.messenger' versionCode='5' versionName='1.2.2'`,
 `sdkVersion:'26'`, `targetSdkVersion:'34'`, and a verified v2/v3 signature with the local
 certificate.
 

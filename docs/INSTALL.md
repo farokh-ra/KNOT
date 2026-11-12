@@ -77,15 +77,17 @@ aapt2 dump badging app-release.apk
 sha256sum app-release.apk
 ```
 
-Expected: package `dev.twoperson.messenger`, versionCode `2`, versionName `1.1.0`,
+Expected: package `dev.twoperson.messenger`, versionCode `5`, versionName `1.2.2`,
 `sdkVersion:'26'`, `targetSdkVersion:'34'`, signed by your local release certificate (the
 build on this machine uses `CN=Knot Release, O=Knot, C=US`), and the same SHA-256 as the
 checksum you recorded for your build. A different signing key means the app cannot upgrade
 an existing install in place.
 
-Upgrading in place from 1.0.0 is supported because the application ID and signing key are
-unchanged. The first launch of 1.1.0 migrates the old single conversation into the `primary`
-contact, keeping its history, invitation and pinned identity.
+Upgrading in place from 1.0.0/1.1.x is supported because the application ID and signing key
+are unchanged. The first launch of 1.1.0 migrates the old single conversation into the
+`primary` contact, keeping its history, invitation and pinned identity. The 1.2.2 upgrade
+removes the manual discovery-method selector; the stored preference is ignored and every
+device runs every discovery path automatically.
 
 ## After installing
 

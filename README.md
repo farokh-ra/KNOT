@@ -9,8 +9,8 @@ account system, no messaging backend, no cloud database, no relay and no analyti
 
 [![Android](https://img.shields.io/badge/Android-8.0%2B-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://developer.android.com)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.0.21-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white)](https://kotlinlang.org)
-[![Version](https://img.shields.io/badge/version-1.1.0-14B8A6?style=for-the-badge)](https://github.com/farokh-ra/KNOT)
-[![Tests](https://img.shields.io/badge/tests-86%20passing-22C55E?style=for-the-badge)](docs/TESTING.md)
+[![Version](https://img.shields.io/badge/version-1.2.2-14B8A6?style=for-the-badge)](https://github.com/farokh-ra/KNOT)
+[![Tests](https://img.shields.io/badge/tests-95%20passing-22C55E?style=for-the-badge)](docs/TESTING.md)
 [![Backend](https://img.shields.io/badge/backend-none-0F172A?style=for-the-badge)](#privacy-by-design)
 [![Stars](https://img.shields.io/github/stars/farokh-ra/KNOT?style=for-the-badge&logo=github)](https://github.com/farokh-ra/KNOT/stargazers)
 
@@ -22,8 +22,8 @@ account system, no messaging backend, no cloud database, no relay and no analyti
 
 ---
 
-> **Project status — v1.1.0**
-> The app compiles and the 86-test JVM suite passes. The release signing path is documented
+> **Project status — v1.2.2**
+> The app compiles and the 95-test JVM suite passes. The release signing path is documented
 > and produces a signed APK when the local keystore is present. No prebuilt release artifact
 > is published in this repository — build it locally with the included Gradle wrapper.
 > On-device installation, QR scanning and the two-phone network matrix still need to be
@@ -47,7 +47,7 @@ server component in this repository and no hosted service operated for the app.
 |---|---|
 | **App name** | Knot |
 | **Package** | `dev.twoperson.messenger` |
-| **Version** | 1.1.0 (versionCode 2) |
+| **Version** | 1.2.2 (versionCode 5) |
 | **Platform** | Android 8.0 (API 26) and newer |
 | **Language** | Kotlin 2.0.21 |
 | **Build** | Gradle 8.11.1 · Android Gradle Plugin 8.7.3 |
@@ -68,7 +68,7 @@ NAT, firewall or carrier-grade NAT. When a path does not exist, Knot reports
 |---|---|---|
 | **Tabs and contacts** | Chats · Contacts · Settings | A local address book with search, private notes, per-contact invitations and a conversation list that includes every contact with a pairing, invitation or history. Rename a contact from the chat list at any time. |
 | **Pair once** | 32-byte invitation secret per contact | One person creates an invitation; the other scans the QR code or pastes the `TPM1-…` code. Each contact has an independent secret and pinned identity. |
-| **Serverless discovery** | UDP trackers + DHT + LAN beacon | Both devices derive a rendezvous topic from the invitation and find each other without an account server, even on networks that block the usual DHT ports. |
+| **Serverless discovery** | UDP trackers + DHT + LAN beacon, always in parallel | Both devices derive a rendezvous topic from the invitation and find each other without an account server, even on networks that block the usual DHT ports. Every discovery path runs automatically; there is no manual method selector that could put the two devices on different paths. |
 | **Direct connection** | UDP hole punching | Peers authenticate and talk directly; no TURN, relay or message-forwarding path exists in the codebase. |
 | **End-to-end encryption** | X25519 + HKDF + AES-256-GCM | Fresh ephemeral keys per session, authenticated handshake, per-direction nonces and a replay window. |
 | **Reliable messaging** | Local outbox + ACKs | Messages are stored before sending, retried after reconnection and acknowledged only after the peer stores them. |
@@ -118,6 +118,11 @@ Discovery has four independent paths, all sharing the same UDP socket:
    publishes the port peers should actually dial.
 3. **BitTorrent mainline DHT** (BEP 5 `get_peers` / `announce_peer`) on the derived topic.
 4. **LAN beacon** on UDP port 41999 for the same-Wi-Fi case.
+
+Every device runs all four paths at the same time, then keeps re-running them while the link
+is down. There is no manual connection-method setting. The last authenticated peer endpoint is
+also redialled immediately and retried every few seconds, so both devices can meet again even
+before a fresh DHT or tracker lookup finishes.
 
 These services learn a derived topic hash and your public IP/UDP port while the engine is
 running — nothing else. Incoming authenticated handshakes are accepted at any time, not only
@@ -202,7 +207,7 @@ flowchart LR
 | **UI** | Tabbed Material 3 shell — Chats, Contacts, Settings — plus Pairing, Chat, Contact detail and About screens; contact search, chat previews, unread badges, date separators, file bubbles and jump-to-latest. |
 | **Service** | An opt-in `dataSync` foreground service keeps the engine alive in the background; its notification is silent, and alerts use a separate per-conversation message channel. With the option off, the engine uses a short background grace period. |
 | **Engine** | Contact-scoped connection state machine, discovery loop, per-contact text outbox, file transfer manager, acknowledgements, network-change handling and reconnect backoff. |
-| **Protocol** | Versioned binary schema (v3) with strict validation, chunking, bounded reassembly and file offer/data/ack/end/done messages. |
+| **Protocol** | Versioned binary schema (v4) with strict validation, chunking, bounded reassembly and file offer/data/ack/end/done messages. |
 | **Transport** | One UDP socket, authenticated handshake, encrypted reliable frames, 4096-frame window and heartbeats. |
 | **Discovery** | BEP 15 UDP-tracker rendezvous, STUN public-endpoint lookup, minimal mainline-DHT client and a same-subnet LAN beacon. |
 | **Storage** | SQLite message and transfer state, app-private incoming files and outgoing cache copies, pinned peer identity and Keystore-wrapped secrets. |
@@ -306,7 +311,7 @@ sdk.dir=C\:\\Users\\you\\AppData\\Local\\Android\\Sdk
 ```powershell
 $env:JAVA_HOME = "C:\path\to\jdk-17-or-newer"
 
-.\gradlew.bat :app:testDebugUnitTest      # 86 JVM tests
+.\gradlew.bat :app:testDebugUnitTest      # 95 JVM tests
 .\gradlew.bat :app:lintDebug              # Android lint
 .\gradlew.bat :app:assembleDebug          # debug APK
 .\gradlew.bat :app:assembleRelease        # signed release APK
@@ -432,7 +437,7 @@ contact, message, file and local setting.
 ./gradlew :app:testDebugUnitTest
 ```
 
-The JVM suite contains **86 tests** across crypto, protocol, files, DHT encoding, STUN, BEP 15
+The JVM suite contains **95 tests** across crypto, protocol, files, DHT encoding, STUN, BEP 15
 trackers, secure channel, handshake, a full loopback-UDP peer link, contact models and settings
 policy. The tests use real sockets and real crypto, not mocks.
 
@@ -478,7 +483,7 @@ KNOT/
 │       │   │   ├── util/         Activity visibility tracking and theme controller
 │       │   │   └── ui/           Tabbed shell, chat list, contacts, settings, pairing, chat, about
 │       │   └── res/              Material 3 light/dark themes, layouts, icons, FileProvider paths
-│       └── test/                 86 JVM tests (crypto, protocol, files, rendezvous, loopback link, models)
+│       └── test/                 95 JVM tests (crypto, protocol, files, rendezvous, loopback link, models)
 ├── docs/                         Architecture, protocol, security, testing, build, install
 ├── gradle/                       Gradle wrapper
 ├── signing/                      Local signing material (git-ignored)
@@ -543,6 +548,14 @@ adding a relay:
 The complete list is in [`LIMITATIONS.md`](LIMITATIONS.md).
 
 ## Roadmap
+
+**Shipped in 1.2.2**
+
+- One automatic connection policy: LAN beacon, UDP tracker/STUN, DHT and the saved last
+  endpoint always run in parallel, with no manual method selector.
+- The saved peer endpoint is retried every few seconds while the link is down, so a
+  simultaneous restart on both devices reconnects without waiting for fresh discovery.
+- Connected status names the discovery route that actually carried the link.
 
 **Shipped in 1.1.0**
 
