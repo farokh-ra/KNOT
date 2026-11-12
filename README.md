@@ -9,7 +9,7 @@ account system, no messaging backend, no cloud database, no relay and no analyti
 
 [![Android](https://img.shields.io/badge/Android-8.0%2B-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://developer.android.com)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.0.21-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white)](https://kotlinlang.org)
-[![Version](https://img.shields.io/badge/version-1.2.2-14B8A6?style=for-the-badge)](https://github.com/farokh-ra/KNOT)
+[![Version](https://img.shields.io/badge/version-1.2.3-14B8A6?style=for-the-badge)](https://github.com/farokh-ra/KNOT)
 [![Tests](https://img.shields.io/badge/tests-95%20passing-22C55E?style=for-the-badge)](docs/TESTING.md)
 [![Backend](https://img.shields.io/badge/backend-none-0F172A?style=for-the-badge)](#privacy-by-design)
 [![Stars](https://img.shields.io/github/stars/farokh-ra/KNOT?style=for-the-badge&logo=github)](https://github.com/farokh-ra/KNOT/stargazers)
@@ -22,7 +22,7 @@ account system, no messaging backend, no cloud database, no relay and no analyti
 
 ---
 
-> **Project status — v1.2.2**
+> **Project status — v1.2.3**
 > The app compiles and the 95-test JVM suite passes. The release signing path is documented
 > and produces a signed APK when the local keystore is present. No prebuilt release artifact
 > is published in this repository — build it locally with the included Gradle wrapper.
@@ -47,7 +47,7 @@ server component in this repository and no hosted service operated for the app.
 |---|---|
 | **App name** | Knot |
 | **Package** | `dev.twoperson.messenger` |
-| **Version** | 1.2.2 (versionCode 5) |
+| **Version** | 1.2.3 (versionCode 6) |
 | **Platform** | Android 8.0 (API 26) and newer |
 | **Language** | Kotlin 2.0.21 |
 | **Build** | Gradle 8.11.1 · Android Gradle Plugin 8.7.3 |
@@ -74,7 +74,7 @@ NAT, firewall or carrier-grade NAT. When a path does not exist, Knot reports
 | **Reliable messaging** | Local outbox + ACKs | Messages are stored before sending, retried after reconnection and acknowledged only after the peer stores them. |
 | **Files of any size** | Streaming blocks + resume | Attach any file the system picker can open. Bytes stream in 16 KiB blocks over the same encrypted link, with live progress, automatic resume from the receiver’s durable acknowledged offset, and an end-to-end FNV-1a digest check before the file is published. |
 | **Duplicate suppression** | Stable message and transfer IDs | A resent message is acknowledged again but never displayed twice; a resumed file never repeats or skips a block. |
-| **Background link** | Opt-in `dataSync` foreground service | Off by default. When enabled, the connection survives screen-off and app backgrounding with a silent, ongoing notification that mirrors the real state. With it off, Knot keeps the link for a short grace period after the last screen closes. |
+| **Background link** | Always-on `dataSync` foreground service | While a contact is paired, the connection survives screen-off, app backgrounding and reboots, with a silent, ongoing notification that mirrors the real state. There is no opt-in switch to leave one side offline. |
 | **Message actions** | Long-press a bubble | Copy text, retry a failed send, delete a message, and open, share or save a completed file to `Downloads/Knot`. |
 | **Real message alerts** | Per-conversation notifications | A high-importance notification is posted only when a new message or completed file arrives while no Knot screen is visible. Each conversation has its own notification; opening that chat clears it. Previews can be hidden in Settings. |
 | **Themes and privacy** | System / Light / Dark · private previews | Material 3 light and dark palettes, a notification-preview switch, and a one-tap “delete all contacts & data” action. |
@@ -205,8 +205,8 @@ flowchart LR
 | Layer | Responsibility |
 |---|---|
 | **UI** | Tabbed Material 3 shell — Chats, Contacts, Settings — plus Pairing, Chat, Contact detail and About screens; contact search, chat previews, unread badges, date separators, file bubbles and jump-to-latest. |
-| **Service** | An opt-in `dataSync` foreground service keeps the engine alive in the background; its notification is silent, and alerts use a separate per-conversation message channel. With the option off, the engine uses a short background grace period. |
-| **Engine** | Contact-scoped connection state machine, discovery loop, per-contact text outbox, file transfer manager, acknowledgements, network-change handling and reconnect backoff. |
+| **Service** | An always-on `dataSync` foreground service keeps the engine alive in the background and restarts it after a reboot or app update; its notification is silent, and alerts use a separate per-conversation message channel. |
+| **Engine** | Contact-scoped connection state machine, discovery loop, per-contact text outbox, file transfer manager, acknowledgements, network-change revalidation and reconnect backoff. |
 | **Protocol** | Versioned binary schema (v4) with strict validation, chunking, bounded reassembly and file offer/data/ack/end/done messages. |
 | **Transport** | One UDP socket, authenticated handshake, encrypted reliable frames, 4096-frame window and heartbeats. |
 | **Discovery** | BEP 15 UDP-tracker rendezvous, STUN public-endpoint lookup, minimal mainline-DHT client and a same-subnet LAN beacon. |
@@ -417,10 +417,10 @@ build with no native libraries, so it runs on arm64, arm32 and x86 devices with 
    screen is visible. Each conversation has its own notification and opening it clears that
    chat's alert. The permission is requested only from **Settings → Enable**; if it is denied,
    the Settings tab links to system settings.
-9. **Settings** contains the System/Light/Dark theme, the notification-preview switch and the
-   optional **Background connection** mode. Background mode uses a silent, ongoing notification
-   because Android requires one for a foreground service. It is off by default; when off, Knot
-   keeps the link for a short grace period after the last screen closes.
+9. **Settings** contains the System/Light/Dark theme, the notification-preview switch and an
+   **Always-on connection** card. The connection is always kept open while a contact is paired,
+   so Android shows a silent, ongoing notification. Tapping the card opens battery settings so
+   you can mark Knot as unrestricted on phones that delay background delivery.
 10. **About** links to the GitHub repository and the author's Telegram contact.
 
 The chat subtitle shows the direct connection type while the channel is up. Only one contact is
@@ -479,7 +479,7 @@ KNOT/
 │       │   │   ├── net/rendezvous/  BEP 15 UDP trackers, STUN, shared-socket rendezvous
 │       │   │   ├── data/         Contacts, SQLite history and transfers, settings, Keystore secrets
 │       │   │   ├── engine/       Contact-scoped connection state machine, discovery, outbox, file streaming
-│       │   │   ├── service/      Opt-in foreground service and per-conversation notifications
+│       │   │   ├── service/      Always-on foreground service and per-conversation notifications
 │       │   │   ├── util/         Activity visibility tracking and theme controller
 │       │   │   └── ui/           Tabbed shell, chat list, contacts, settings, pairing, chat, about
 │       │   └── res/              Material 3 light/dark themes, layouts, icons, FileProvider paths
@@ -531,10 +531,12 @@ adding a relay:
   URI; if that grant is later revoked, the message reports the file as unavailable.
 - **The protocol caps a file at 4 TiB**, a name at 255 UTF-8 bytes and a MIME type at 128 bytes.
   Larger files are rejected with a distinct message.
-- **Background delivery is opt-in and best-effort.** With **Background connection** enabled, a
-  `dataSync` foreground service holds the link while the screen is off, but it cannot survive
-  the device being powered off, the app being force-stopped, or long Doze/standby periods. With
-  it off, Knot keeps the link for a short grace period after the last screen closes.
+- **Background delivery is always on but still best-effort.** A `dataSync` foreground service
+  holds the link while the screen is off and restarts it after a reboot, so the two devices can
+  receive messages without opening the app. It cannot survive the app being force-stopped,
+  aggressive OEM task killers, or long Doze/standby periods when the phone restricts network
+  access. Setting Knot to **Unrestricted** in Android battery settings improves this. There is
+  still no push service that can wake a force-stopped app.
 - **Notifications are only real events.** A high-importance alert appears only for a new
   incoming message or completed file while no Knot screen is visible. Each notification belongs
   to one conversation and is cleared when that chat is opened. If notification permission is
@@ -548,6 +550,17 @@ adding a relay:
 The complete list is in [`LIMITATIONS.md`](LIMITATIONS.md).
 
 ## Roadmap
+
+**Shipped in 1.2.3**
+
+- Always-on background delivery: the foreground service starts automatically whenever a
+  contact is paired and restarts after a reboot or app update.
+- Every default-network change now tears down the stale socket and revalidates immediately,
+  even while the UI said `Connected`, instead of waiting for the transport timeout.
+- Returning to the app after more than five seconds triggers a fresh handshake, and a dead
+  link is detected after 15 seconds instead of 30.
+- Battery-settings shortcut and updated notification wording; the old opt-in background
+  switch is gone.
 
 **Shipped in 1.2.2**
 

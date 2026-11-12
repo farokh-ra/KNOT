@@ -23,7 +23,8 @@ import dev.twoperson.messenger.util.AppVisibility
 
 /**
  * Notification policy:
- *  - the opt-in background service uses a silent, minimum-importance channel; it never alerts;
+ *  - the always-on connection service uses a silent, minimum-importance channel; it never
+ *    alerts;
  *  - a normal notification is posted only when a real incoming message (or a completed
  *    incoming file) was stored while no Knot screen is open;
  *  - each conversation gets its own notification, so tapping it opens the right chat;

@@ -201,11 +201,8 @@
     <string name="settings_notification_settings">Open system settings</string>
     <string name="settings_previews">Show message previews</string>
     <string name="settings_previews_desc">When off, alerts show only that a message arrived, never the contact name or content.</string>
-    <string name="settings_background">Background connection</string>
-    <string name="settings_background_desc">Keep the direct link alive while Knot is in the background. Android requires a silent, ongoing notification while this is on.</string>
-    <string name="settings_background_confirm_title">Keep the connection in the background?</string>
-    <string name="settings_background_confirm_message">Knot will run a foreground service with a permanent silent notification. This gives you the best chance of receiving messages while the app is closed. You can turn it off at any time. When off, Knot still checks for messages for a short grace period after you leave the app.</string>
-    <string name="settings_background_confirm_ok">Turn on</string>
+    <string name="settings_background">Always-on connection</string>
+    <string name="settings_background_desc">Knot keeps the direct link alive while it is paired, even in the background, and revalidates it when your network changes. Android shows a silent, ongoing notification because the connection stays open. If your phone still delays messages, tap here and set Knot to Unrestricted in battery settings.</string>
     <string name="settings_data">Data &amp; privacy</string>
     <string name="settings_clear_all">Clear all conversations</string>
     <string name="settings_clear_all_desc">Delete every message and app-private file. Contacts and pairings stay.</string>
@@ -222,12 +219,11 @@
 
     <string name="settings_privacy_body">No account, no analytics, no crash reporting and no server that stores or forwards messages. Public DHT nodes, trackers and STUN servers help devices find each other; chat content only travels over the direct encrypted link.</string>
     <string name="settings_version">Version %1$s</string>
-    <string name="settings_no_contacts">Add a contact first.</string>
     <string name="settings_theme_updated">Theme updated</string>
 
     <!-- Notifications -->
-    <string name="notif_channel_name">Background connection</string>
-    <string name="notif_channel_desc">Silent, minimum-importance notification used only when you opt into keeping the direct connection alive in the background.</string>
+    <string name="notif_channel_name">Always-on connection</string>
+    <string name="notif_channel_desc">Silent, minimum-importance notification shown while Knot keeps the direct connection open for realtime delivery.</string>
     <string name="notif_title">Knot</string>
     <string name="notif_text_connected_lan">Connected — direct on the local network</string>
     <string name="notif_text_connected_internet">Connected — direct over the internet</string>

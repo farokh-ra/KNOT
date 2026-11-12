@@ -50,12 +50,7 @@ internal object EndpointCodec {
 data class AppSettings(
     val theme: ThemeMode = ThemeMode.SYSTEM,
     /** Show the sender name and message text on message notifications. */
-    val notificationPreviews: Boolean = true,
-    /**
-     * Keep the direct link alive while the app is fully in the background. Android requires a
-     * silent, ongoing notification for this opt-in mode, so it is off by default.
-     */
-    val backgroundConnection: Boolean = false
+    val notificationPreviews: Boolean = true
 )
 
 /** Pure settings policy, separated from SharedPreferences so it can be unit tested. */
@@ -71,8 +66,12 @@ object SettingsPolicy {
     fun notificationBody(previews: Boolean, preview: String, privateText: String): String =
         if (previews) preview else privateText
 
-    fun shouldRunBackgroundService(enabled: Boolean, engineConfigured: Boolean): Boolean =
-        enabled && engineConfigured
+    /**
+     * Realtime delivery needs the foreground service for as long as a pairing exists. There is
+     * no user-facing switch: a setting mismatch between the two devices is exactly the kind of
+     * problem that made delivery look one-sided.
+     */
+    fun shouldRunBackgroundService(engineConfigured: Boolean): Boolean = engineConfigured
 }
 
 /**
@@ -97,11 +96,6 @@ class SettingsStore(context: Context) {
     fun setNotificationPreviews(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_PREVIEWS, enabled).apply()
         _settings.value = _settings.value.copy(notificationPreviews = enabled)
-    }
-
-    fun setBackgroundConnection(enabled: Boolean) {
-        prefs.edit().putBoolean(KEY_BACKGROUND, enabled).apply()
-        _settings.value = _settings.value.copy(backgroundConnection = enabled)
     }
 
     /**
@@ -142,15 +136,13 @@ class SettingsStore(context: Context) {
 
     private fun read(): AppSettings = AppSettings(
         theme = ThemeMode.fromStored(prefs.getString(KEY_THEME, null)),
-        notificationPreviews = prefs.getBoolean(KEY_PREVIEWS, true),
-        backgroundConnection = prefs.getBoolean(KEY_BACKGROUND, false)
+        notificationPreviews = prefs.getBoolean(KEY_PREVIEWS, true)
     )
 
     companion object {
         private const val PREFS = "app_settings"
         private const val KEY_THEME = "theme"
         private const val KEY_PREVIEWS = "notification_previews"
-        private const val KEY_BACKGROUND = "background_connection"
         private const val KEY_LAST_ENDPOINT_PREFIX = "last_endpoint_"
 
         /** Reads the theme before the first activity is created. */

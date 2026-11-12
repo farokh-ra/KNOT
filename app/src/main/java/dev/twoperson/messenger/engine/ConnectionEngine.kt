@@ -219,9 +219,21 @@ class ConnectionEngine(
     private var loopJob: Job? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
 
+    /**
+     * `registerDefaultNetworkCallback` immediately reports the current default network. That
+     * first callback is not a change; treating it as one would restart the runtime in a loop.
+     */
+    @Volatile
+    private var networkCallbackPrimed = false
+
     private var foregroundCount = 0
     private var lastRestartAt = 0L
     private var graceStopJob: Job? = null
+    private var pendingRestartJob: Job? = null
+
+    /** Last time the last Knot screen stopped, or 0 while the UI is visible. */
+    @Volatile
+    private var lastUiHiddenAt = 0L
 
     private val deviceName: String = listOfNotNull(Build.MANUFACTURER, Build.MODEL)
         .joinToString(" ")
@@ -245,10 +257,10 @@ class ConnectionEngine(
 
     /**
      * Android does not allow network work to continue indefinitely after the last screen goes
-     * away unless a foreground service is showing its mandatory notification. By default the
-     * engine keeps the direct link alive for a short grace period so a reply that arrives right
-     * after leaving the app can still raise a message notification, then it shuts the socket
-     * down cleanly. Users who need always-on background delivery can opt into the service.
+     * away unless a foreground service is showing its mandatory notification. The service is
+     * always on while a contact is paired, so this grace path is only a fallback for devices
+     * that refuse to promote the service. It keeps the socket alive briefly, then shuts it
+     * down cleanly instead of leaving a dead socket behind.
      */
     fun onBackground() {
         synchronized(this) {
@@ -259,6 +271,8 @@ class ConnectionEngine(
                 delay(BACKGROUND_GRACE_MS)
                 synchronized(this@ConnectionEngine) {
                     if (foregroundCount != 0) return@synchronized
+                    pendingRestartJob?.cancel()
+                    pendingRestartJob = null
                     stopResources()
                     unregisterNetworkCallback()
                     _status.value = ConnectionStatus(
@@ -267,6 +281,27 @@ class ConnectionEngine(
                 }
             }
         }
+    }
+
+    /**
+     * Called when the first Knot screen becomes visible again. A connection that stayed
+     * "connected" while the phone was in a pocket can be a stale NAT mapping, so anything
+     * longer than a brief navigation gap gets a fresh handshake before the UI trusts it.
+     */
+    fun onUiVisible() {
+        val hiddenAt = synchronized(this) {
+            val value = lastUiHiddenAt
+            lastUiHiddenAt = 0L
+            value
+        }
+        if (hiddenAt == 0L) return
+        if (System.currentTimeMillis() - hiddenAt < UI_RESUME_REVALIDATE_MS) return
+        scope.launch { restartRuntime(force = true) }
+    }
+
+    /** Marks the point where no Knot screen is visible, used by [onUiVisible]. */
+    fun onUiHidden() {
+        lastUiHiddenAt = System.currentTimeMillis()
     }
 
     /**
@@ -1193,7 +1228,8 @@ class ConnectionEngine(
                 override fun onLost(network: Network) = onDefaultNetworkChanged()
             }
             // Default network only: Wi-Fi and mobile data coexisting must not count as an
-            // event, and a live link survives the switch on its own.
+            // event. Every genuine change is revalidated below.
+            networkCallbackPrimed = false
             manager.registerDefaultNetworkCallback(callback)
             networkCallback = callback
         } catch (e: Exception) {
@@ -1201,8 +1237,19 @@ class ConnectionEngine(
     }
 
     private fun onDefaultNetworkChanged() {
-        if (foregroundCount <= 0) return
-        if (_status.value.state == ConnectionState.CONNECTED) return
+        // The callback registration itself produces an immediate onAvailable for the network
+        // that is already in use. Only later callbacks represent a real change.
+        synchronized(this) {
+            if (!networkCallbackPrimed) {
+                networkCallbackPrimed = true
+                return
+            }
+        }
+        // Every network change makes the previous socket and NAT mapping suspect. Revalidate
+        // immediately even while the status still says CONNECTED: waiting for the transport
+        // timeout is what made messages appear to need a "wake-up" send after coming home.
+        // The restart is trailing-debounced so Wi-Fi -> mobile handovers produce one restart
+        // after the new default network settles, not one per callback.
         scheduleRestart()
     }
 
@@ -1214,11 +1261,18 @@ class ConnectionEngine(
         } catch (e: Exception) {
         }
         networkCallback = null
+        networkCallbackPrimed = false
     }
 
     private fun scheduleRestart() {
         if (foregroundCount <= 0) return
-        scope.launch { restartRuntime() }
+        synchronized(this) {
+            pendingRestartJob?.cancel()
+            pendingRestartJob = scope.launch {
+                delay(RESTART_DEBOUNCE_MS)
+                restartRuntime(force = true)
+            }
+        }
     }
 
     private suspend fun restartRuntime(force: Boolean = false) {
@@ -1230,8 +1284,9 @@ class ConnectionEngine(
             lastRestartAt = now
             stopResources()
             if (foregroundCount > 0) {
-                // Give immediate feedback when the user switches method instead of leaving
-                // the old "connected" or "unable" state on screen until the loop restarts.
+                // Give immediate feedback when the connection is revalidated instead of
+                // leaving the old "connected" or "unable" state on screen until the loop
+                // restarts.
                 _status.value = ConnectionStatus(
                     if (isConfigured()) ConnectionState.DISCOVERING else ConnectionState.NOT_PAIRED
                 )
@@ -1287,6 +1342,8 @@ class ConnectionEngine(
     fun shutdown() {
         graceStopJob?.cancel()
         graceStopJob = null
+        pendingRestartJob?.cancel()
+        pendingRestartJob = null
         stopResources()
         unregisterNetworkCallback()
         scope.cancel()
@@ -1294,6 +1351,7 @@ class ConnectionEngine(
 
     companion object {
         private const val BACKGROUND_GRACE_MS = 20_000L
+        private const val UI_RESUME_REVALIDATE_MS = 5_000L
         private const val DISCOVERY_INTERVAL_MS = 4_000L
         private const val DISCOVERY_BUDGET_MS = 7_000L
         private const val RENDEZVOUS_INTERVAL_MS = 7_000L
@@ -1309,7 +1367,7 @@ class ConnectionEngine(
         private const val INITIAL_BACKOFF_MS = 1_500L
         private const val MAX_BACKOFF_MS = 15_000L
         private const val RECONNECT_PAUSE_MS = 200L
-        private const val RESTART_DEBOUNCE_MS = 3_000L
+        private const val RESTART_DEBOUNCE_MS = 1_500L
         private const val RESTART_SETTLE_MS = 250L
         private const val FLUSH_RETRY_MS = 120L
         private const val OUTBOX_IDLE_MS = 400L

@@ -45,18 +45,18 @@ buildable, testable, signed APK today, with the discovery library difference doc
 
 ## Deliberate scope choices
 
-- **A `dataSync` foreground service was added, but it is opt-in.** The roadmap only asked for
-  foreground reliability; Android cannot keep a link alive with the screen off without a
-  foreground service and its mandatory notification. Because the product requirement is to
-  avoid an always-present notification, the service is off by default and controlled from
-  Settings. It is a lifecycle holder only (no relay, no content, no wake lock) with a silent
-  notification that mirrors the real state; with it off, the engine keeps a short background
-  grace period. Background delivery while the device is off or the app is force-stopped is
-  still not promised, and there is still no push channel.
+- **A `dataSync` foreground service was added and became always-on in 1.2.3.** The roadmap only
+  asked for foreground reliability; Android cannot keep a link alive with the screen off
+  without a foreground service and its mandatory notification. Earlier versions made it
+  opt-in, but a setting mismatch between the two devices stopped realtime delivery on one side,
+  so 1.2.3 removed the switch: the service runs whenever a contact is paired and restarts after
+  a reboot or app update. It is a lifecycle holder only (no relay, no content, no wake lock)
+  with a silent notification that mirrors the real state. Background delivery while the device
+  is off or the app is force-stopped is still not promised, and there is still no push channel.
 - **Alerting notifications are message-only and per conversation.** A separate high-importance
   channel is used only when a real incoming message or completed file is stored while no Knot
   activity is visible. Each contact gets its own notification and unread count; opening that
-  chat clears it. The optional foreground-service notification never alerts.
+  chat clears it. The always-on connection-service notification never alerts.
 - **The local address book extends the original two-person scope.** Each contact remains a
   strict one-to-one pairing with its own invitation and pinned identity, but several contacts
   can be stored locally. Only one direct connection is active at a time; opening a contact

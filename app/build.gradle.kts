@@ -23,10 +23,11 @@ android {
         applicationId = "dev.twoperson.messenger"
         minSdk = 26
         targetSdk = 34
-        // 5 / 1.2.2: one automatic connection policy; every discovery path runs in parallel.
-        // The package id and signing key stay stable so an existing install can be upgraded.
-        versionCode = 5
-        versionName = "1.2.2"
+        // 6 / 1.2.3: always-on background delivery and prompt revalidation on network/app
+        // resume. The package id and signing key stay stable so an existing install can be
+        // upgraded in place.
+        versionCode = 6
+        versionName = "1.2.3"
         vectorDrawables.useSupportLibrary = true
     }
 

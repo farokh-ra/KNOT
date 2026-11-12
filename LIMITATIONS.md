@@ -27,16 +27,18 @@ adding a relay.
 
 ## Behaviour while the app is not open
 
-6. **Background delivery is opt-in and needs the app to still be running.** With
-   *Settings → Background connection* enabled, a `dataSync` foreground service holds the direct
-   connection while the screen is off or another app is in front, and a silent ongoing
-   notification shows the real state. It cannot survive the device being powered off, the app
-   being force-stopped by the user, or long Doze/standby periods; in those cases the other side
-   sees the link close and the app reconnects when it runs again. With the option off, Knot
-   keeps the link for a short grace period after the last screen closes, then releases it.
-7. **Both people must have the app running for messages or files to travel.** There is no push
-   notification and no server to hold data, so a message or file queued while the peer is off
-   stays on the sender and continues after the peer reconnects.
+6. **Background delivery is always on while a contact is paired.** A `dataSync` foreground
+   service holds the direct connection while the screen is off or another app is in front, and
+   a silent ongoing notification shows the real state. The service is restarted after a reboot
+   or app update. It cannot survive the app being force-stopped by the user, aggressive OEM
+   task killers, or long Doze/standby periods that suspend network access; setting Knot to
+   **Unrestricted** in Android battery settings improves the odds. When the service is
+   refused or killed, the engine falls back to a short grace period after the last screen
+   closes and reconnects when the app runs again.
+7. **Both people must have the app running for messages or files to travel.** The always-on
+   service keeps it running in the background, but there is no push notification and no server
+   to hold data. A message or file queued while the peer is genuinely offline stays on the
+   sender and continues after the peer reconnects.
 8. **Only one direct connection is active at a time.** Contacts are independent one-to-one
    threads, but opening a different contact changes the engine's connection target, cancels
    in-flight transfers for the previous contact and starts discovery for the new one. Queued
@@ -78,11 +80,11 @@ adding a relay.
     Knot screen is visible. They are never used to keep a connection alive. Each notification
     belongs to one conversation, keeps its unread count while the app is backgrounded and is
     cleared when that chat is opened.
-20. **The foreground-service notification is mandatory only when background mode is on.** It is
-    placed on a silent, minimum-importance channel and mirrors the connection state. Turning
-    off *Background connection* removes the notification and returns the engine to the short
-    grace period. Android may still show an app-level foreground-service indicator in system
-    settings while the service runs.
+20. **The foreground-service notification is mandatory while a contact is paired.** It is
+    placed on a silent, minimum-importance channel and mirrors the connection state. There is
+    no switch that turns it off, because turning it off is exactly what stops realtime delivery.
+    Android may also show an app-level foreground-service indicator in system settings while
+    the service runs.
 21. **Notification permission is requested only from the explicit enable button**, never on
     launch. If it is denied or notifications are blocked in system settings, the app still
     sends and receives; the Settings tab shows the blocked state and a settings shortcut. No

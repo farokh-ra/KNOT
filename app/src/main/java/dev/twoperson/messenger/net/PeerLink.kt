@@ -419,8 +419,12 @@ class PeerLink(
         private const val HANDSHAKE_TIMEOUT_MS = 25_000L
         private const val HANDSHAKE_RETRY_MS = 400L
 
-        /** The peer is considered gone only after this long without a single authenticated frame. */
-        private const val PEER_TIMEOUT_MS = 30_000L
+        /**
+         * The peer is considered gone after five missed 3-second heartbeats. The previous
+         * 30-second window left the UI claiming CONNECTED long after the path died, which
+         * delayed reconnection when a phone left and rejoined a network.
+         */
+        private const val PEER_TIMEOUT_MS = 15_000L
         private const val HEARTBEAT_MS = 3_000L
 
         private const val BASE_RETRANSMIT_MS = 300L

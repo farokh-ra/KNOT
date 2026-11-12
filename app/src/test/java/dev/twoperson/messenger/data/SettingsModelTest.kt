@@ -44,11 +44,9 @@ class SettingsModelTest {
     }
 
     @Test
-    fun `background service requires both the setting and a pairing`() {
-        assertTrue(SettingsPolicy.shouldRunBackgroundService(true, true))
-        assertFalse(SettingsPolicy.shouldRunBackgroundService(true, false))
-        assertFalse(SettingsPolicy.shouldRunBackgroundService(false, true))
-        assertFalse(SettingsPolicy.shouldRunBackgroundService(false, false))
+    fun `background service is always on while a contact is configured`() {
+        assertTrue(SettingsPolicy.shouldRunBackgroundService(true))
+        assertFalse(SettingsPolicy.shouldRunBackgroundService(false))
     }
 
     @Test
@@ -73,10 +71,9 @@ class SettingsModelTest {
     }
 
     @Test
-    fun `default settings are private and background friendly by choice`() {
+    fun `default settings keep previews on and background delivery mandatory`() {
         val defaults = AppSettings()
         assertEquals(ThemeMode.SYSTEM, defaults.theme)
         assertTrue(defaults.notificationPreviews)
-        assertFalse(defaults.backgroundConnection)
     }
 }
