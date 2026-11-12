@@ -44,49 +44,9 @@ class SettingsModelTest {
     }
 
     @Test
-    fun `background service requires both the setting and a pairing`() {
-        assertTrue(SettingsPolicy.shouldRunBackgroundService(true, true))
-        assertFalse(SettingsPolicy.shouldRunBackgroundService(true, false))
-        assertFalse(SettingsPolicy.shouldRunBackgroundService(false, true))
-        assertFalse(SettingsPolicy.shouldRunBackgroundService(false, false))
-    }
-
-    @Test
-    fun `connection method parses stored values and defaults to automatic`() {
-        assertEquals(ConnectionMethod.LAN, ConnectionMethod.fromStored(" LAN "))
-        assertEquals(ConnectionMethod.UDP_TRACKER, ConnectionMethod.fromStored("udp_tracker"))
-        assertEquals(ConnectionMethod.DHT, ConnectionMethod.fromStored("DHT"))
-        assertEquals(
-            ConnectionMethod.LAST_ENDPOINT,
-            ConnectionMethod.fromStored("last_endpoint")
-        )
-        assertEquals(ConnectionMethod.AUTOMATIC, ConnectionMethod.fromStored(null))
-        assertEquals(ConnectionMethod.AUTOMATIC, ConnectionMethod.fromStored("carrier-pigeon"))
-    }
-
-    @Test
-    fun `connection method capability helpers follow the selection`() {
-        assertTrue(ConnectionMethod.AUTOMATIC.usesLanBeacon)
-        assertTrue(ConnectionMethod.AUTOMATIC.usesUdpTracker)
-        assertTrue(ConnectionMethod.AUTOMATIC.usesDht)
-        assertTrue(ConnectionMethod.AUTOMATIC.usesLastEndpointHint)
-
-        assertTrue(ConnectionMethod.LAN.usesLanBeacon)
-        assertFalse(ConnectionMethod.LAN.usesUdpTracker)
-        assertFalse(ConnectionMethod.LAN.usesDht)
-
-        assertTrue(ConnectionMethod.UDP_TRACKER.usesUdpTracker)
-        assertFalse(ConnectionMethod.UDP_TRACKER.usesLanBeacon)
-        assertFalse(ConnectionMethod.UDP_TRACKER.usesDht)
-
-        assertTrue(ConnectionMethod.DHT.usesDht)
-        assertFalse(ConnectionMethod.DHT.usesLanBeacon)
-        assertFalse(ConnectionMethod.DHT.usesUdpTracker)
-
-        assertTrue(ConnectionMethod.LAST_ENDPOINT.usesLastEndpointHint)
-        assertFalse(ConnectionMethod.LAST_ENDPOINT.usesLanBeacon)
-        assertFalse(ConnectionMethod.LAST_ENDPOINT.usesUdpTracker)
-        assertFalse(ConnectionMethod.LAST_ENDPOINT.usesDht)
+    fun `background service is always on while a contact is configured`() {
+        assertTrue(SettingsPolicy.shouldRunBackgroundService(true))
+        assertFalse(SettingsPolicy.shouldRunBackgroundService(false))
     }
 
     @Test
@@ -111,11 +71,9 @@ class SettingsModelTest {
     }
 
     @Test
-    fun `default settings are private and background friendly by choice`() {
+    fun `default settings keep previews on and background delivery mandatory`() {
         val defaults = AppSettings()
         assertEquals(ThemeMode.SYSTEM, defaults.theme)
         assertTrue(defaults.notificationPreviews)
-        assertFalse(defaults.backgroundConnection)
-        assertEquals(ConnectionMethod.AUTOMATIC, defaults.connectionMethod)
     }
 }

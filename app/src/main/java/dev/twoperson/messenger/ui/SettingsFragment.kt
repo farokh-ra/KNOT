@@ -60,10 +60,7 @@ class SettingsFragment : Fragment() {
             if (!rendering) container.settings.setNotificationPreviews(checked)
         }
         binding.rowPreviews.setOnClickListener { binding.switchPreviews.toggle() }
-        binding.switchBackground.setOnCheckedChangeListener { _, checked ->
-            if (!rendering) requestBackground(checked)
-        }
-        binding.rowBackground.setOnClickListener { binding.switchBackground.toggle() }
+        binding.rowBackground.setOnClickListener { openBatterySettings() }
         binding.rowClearAll.setOnClickListener { confirmClearAll() }
         binding.rowDeleteAll.setOnClickListener { confirmDeleteAll() }
         binding.rowAbout.setOnClickListener {
@@ -97,7 +94,6 @@ class SettingsFragment : Fragment() {
             }
         )
         binding.switchPreviews.isChecked = settings.notificationPreviews
-        binding.switchBackground.isChecked = settings.backgroundConnection
         rendering = false
         renderNotificationStatus()
     }
@@ -174,33 +170,22 @@ class SettingsFragment : Fragment() {
         }
     }
 
-    private fun requestBackground(enabled: Boolean) {
-        if (!enabled) {
-            container.settings.setBackgroundConnection(false)
-            ConnectionService.sync(requireContext())
-            return
-        }
-        if (!container.engine.isConfigured()) {
-            Toast.makeText(requireContext(), R.string.settings_no_contacts, Toast.LENGTH_SHORT).show()
-            setBackgroundSwitch(false)
-            return
-        }
-        MaterialAlertDialogBuilder(requireContext())
-            .setTitle(R.string.settings_background_confirm_title)
-            .setMessage(R.string.settings_background_confirm_message)
-            .setNegativeButton(R.string.cancel) { _, _ -> setBackgroundSwitch(false) }
-            .setPositiveButton(R.string.settings_background_confirm_ok) { _, _ ->
-                container.settings.setBackgroundConnection(true)
-                ConnectionService.sync(requireContext())
+    private fun openBatterySettings() {
+        val packageUri = Uri.parse("package:${requireContext().packageName}")
+        val intents = listOf(
+            Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS),
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).setData(packageUri),
+            Intent(Settings.ACTION_SETTINGS)
+        )
+        for (intent in intents) {
+            try {
+                startActivity(intent)
+                return
+            } catch (e: Exception) {
+                // Try the next system screen; OEMs rename or hide some of them.
             }
-            .setOnCancelListener { setBackgroundSwitch(false) }
-            .show()
-    }
-
-    private fun setBackgroundSwitch(checked: Boolean) {
-        rendering = true
-        binding.switchBackground.isChecked = checked
-        rendering = false
+        }
+        Toast.makeText(requireContext(), R.string.generic_error, Toast.LENGTH_SHORT).show()
     }
 
     private fun confirmClearAll() {

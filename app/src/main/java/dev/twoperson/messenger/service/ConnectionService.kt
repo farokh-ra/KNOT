@@ -28,7 +28,8 @@ import kotlinx.coroutines.launch
 
 /**
  * Holds the engine open for as long as the app is paired, so the direct connection is not
- * torn down when the activity is backgrounded or the screen turns off.
+ * torn down when the activity is backgrounded or the screen turns off. This is always on:
+ * realtime message delivery needs a process that is still listening for the peer.
  *
  * This is only a lifecycle holder: it does no networking itself, holds no content and makes
  * no claim that the peer is reachable. The notification mirrors the real engine state.
@@ -42,8 +43,6 @@ class ConnectionService : Service() {
     private val engine get() = (application as App).container.engine
 
     override fun onBind(intent: Intent?): IBinder? = null
-
-    private val settings get() = (application as App).container.settings
 
     override fun onCreate() {
         super.onCreate()
@@ -61,7 +60,7 @@ class ConnectionService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (!engine.isConfigured() || !settings.current.backgroundConnection) {
+        if (!engine.isConfigured()) {
             stopSelf()
             return START_NOT_STICKY
         }
@@ -150,27 +149,21 @@ class ConnectionService : Service() {
 
     companion object {
         /**
-         * Applies the current settings: starts the opt-in foreground service only when the
-         * user asked for background connectivity and at least one contact is configured;
-         * otherwise stops it. Safe to call from every activity start and settings change.
+         * Applies the current state: starts the always-on foreground service when at least one
+         * contact is configured, otherwise stops it. Safe to call from every activity start,
+         * settings change and pairing change.
          */
         fun sync(context: Context) {
             val app = context.applicationContext as? App ?: return
             val container = app.container
-            val run = SettingsPolicy.shouldRunBackgroundService(
-                container.settings.current.backgroundConnection,
-                container.engine.isConfigured()
-            )
+            val run = SettingsPolicy.shouldRunBackgroundService(container.engine.isConfigured())
             if (run) ensureRunning(context) else stop(context)
         }
 
         /** Idempotent: safe to call from every activity start. */
         fun ensureRunning(context: Context) {
             val app = context.applicationContext as? App ?: return
-            val run = SettingsPolicy.shouldRunBackgroundService(
-                app.container.settings.current.backgroundConnection,
-                app.container.engine.isConfigured()
-            )
+            val run = SettingsPolicy.shouldRunBackgroundService(app.container.engine.isConfigured())
             if (!run) return
             try {
                 ContextCompat.startForegroundService(

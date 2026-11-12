@@ -47,51 +47,10 @@ internal object EndpointCodec {
     }
 }
 
-/**
- * The discovery path the user prefers for finding the other device. Every method still ends in
- * the same direct, authenticated, encrypted UDP link; this only limits how Knot looks for the
- * peer's endpoint.
- */
-enum class ConnectionMethod(val storedValue: String) {
-    /** Try every method below, exactly as earlier versions did. */
-    AUTOMATIC("automatic"),
-
-    /** Same-subnet LAN beacon on UDP port 41999. */
-    LAN("lan"),
-
-    /** BEP 15 UDP trackers plus STUN for the public endpoint. */
-    UDP_TRACKER("udp_tracker"),
-
-    /** BitTorrent mainline DHT (BEP 5). */
-    DHT("dht"),
-
-    /** No discovery: redial only the address that last carried authenticated traffic. */
-    LAST_ENDPOINT("last_endpoint");
-
-    val usesLanBeacon: Boolean get() = this == AUTOMATIC || this == LAN
-    val usesUdpTracker: Boolean get() = this == AUTOMATIC || this == UDP_TRACKER
-    val usesDht: Boolean get() = this == AUTOMATIC || this == DHT
-    val usesLastEndpointHint: Boolean get() = this == AUTOMATIC || this == LAST_ENDPOINT
-
-    companion object {
-        fun fromStored(value: String?): ConnectionMethod {
-            val normalized = value?.trim()?.lowercase()
-            return entries.firstOrNull { it.storedValue == normalized } ?: AUTOMATIC
-        }
-    }
-}
-
 data class AppSettings(
     val theme: ThemeMode = ThemeMode.SYSTEM,
     /** Show the sender name and message text on message notifications. */
-    val notificationPreviews: Boolean = true,
-    /**
-     * Keep the direct link alive while the app is fully in the background. Android requires a
-     * silent, ongoing notification for this opt-in mode, so it is off by default.
-     */
-    val backgroundConnection: Boolean = false,
-    /** Preferred discovery path for the direct connection. */
-    val connectionMethod: ConnectionMethod = ConnectionMethod.AUTOMATIC
+    val notificationPreviews: Boolean = true
 )
 
 /** Pure settings policy, separated from SharedPreferences so it can be unit tested. */
@@ -107,8 +66,12 @@ object SettingsPolicy {
     fun notificationBody(previews: Boolean, preview: String, privateText: String): String =
         if (previews) preview else privateText
 
-    fun shouldRunBackgroundService(enabled: Boolean, engineConfigured: Boolean): Boolean =
-        enabled && engineConfigured
+    /**
+     * Realtime delivery needs the foreground service for as long as a pairing exists. There is
+     * no user-facing switch: a setting mismatch between the two devices is exactly the kind of
+     * problem that made delivery look one-sided.
+     */
+    fun shouldRunBackgroundService(engineConfigured: Boolean): Boolean = engineConfigured
 }
 
 /**
@@ -135,20 +98,9 @@ class SettingsStore(context: Context) {
         _settings.value = _settings.value.copy(notificationPreviews = enabled)
     }
 
-    fun setBackgroundConnection(enabled: Boolean) {
-        prefs.edit().putBoolean(KEY_BACKGROUND, enabled).apply()
-        _settings.value = _settings.value.copy(backgroundConnection = enabled)
-    }
-
-    fun setConnectionMethod(method: ConnectionMethod) {
-        prefs.edit().putString(KEY_CONNECTION_METHOD, method.storedValue).apply()
-        _settings.value = _settings.value.copy(connectionMethod = method)
-    }
-
     /**
      * Last endpoint that carried authenticated traffic for [contactId]. Keeping it across
-     * restarts makes the "Last known endpoint" method usable and lets Automatic reconnect
-     * without running discovery again.
+     * restarts lets the engine redial immediately while discovery runs in parallel.
      */
     fun lastPeerEndpoint(contactId: String): InetSocketAddress? =
         EndpointCodec.decode(prefs.getString(lastEndpointKey(contactId), null))
@@ -184,17 +136,13 @@ class SettingsStore(context: Context) {
 
     private fun read(): AppSettings = AppSettings(
         theme = ThemeMode.fromStored(prefs.getString(KEY_THEME, null)),
-        notificationPreviews = prefs.getBoolean(KEY_PREVIEWS, true),
-        backgroundConnection = prefs.getBoolean(KEY_BACKGROUND, false),
-        connectionMethod = ConnectionMethod.fromStored(prefs.getString(KEY_CONNECTION_METHOD, null))
+        notificationPreviews = prefs.getBoolean(KEY_PREVIEWS, true)
     )
 
     companion object {
         private const val PREFS = "app_settings"
         private const val KEY_THEME = "theme"
         private const val KEY_PREVIEWS = "notification_previews"
-        private const val KEY_BACKGROUND = "background_connection"
-        private const val KEY_CONNECTION_METHOD = "connection_method"
         private const val KEY_LAST_ENDPOINT_PREFIX = "last_endpoint_"
 
         /** Reads the theme before the first activity is created. */

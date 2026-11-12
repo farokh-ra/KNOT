@@ -8,9 +8,9 @@ this repository and no hosted service operated for this app.
 | Layer | Files | Responsibility |
 |---|---|---|
 | UI | `ui/HomeActivity`, `ui/ChatsFragment`, `ui/ContactsFragment`, `ui/SettingsFragment`, `ui/ContactDetailActivity`, `ui/PairingActivity`, `ui/ChatActivity`, `ui/AboutActivity`, `ui/ChatAdapter`, `ui/UiTime`, `ui/Qr` | Tabbed shell (Chats, Contacts, Settings) plus contact detail, pairing, chat and About screens; contact search, chat previews, date separators, file bubbles, unread badges, send-only auto-scroll, QR generation and scanning |
-| Service | `service/ConnectionService`, `service/MessageNotifications` | Opt-in `dataSync` foreground service that holds the engine lifetime; silent service channel and a separate per-conversation alerting channel for real incoming messages/files |
+| Service | `service/ConnectionService`, `service/BootReceiver`, `service/MessageNotifications` | Always-on `dataSync` foreground service that holds the engine lifetime and restarts after reboot or app update; silent service channel and a separate per-conversation alerting channel for real incoming messages/files |
 | Engine | `engine/ConnectionEngine`, `engine/FileTransferManager` | Contact-scoped connection state machine, discovery loop, serial message worker, per-contact text outbox, streaming file transfer, acknowledgements, network-change handling, instant reconnect |
-| Protocol | `protocol/Protocol`, `protocol/Chunking` | Versioned (v3) schema for text and files, strict validation, filename sanitization, chunking and bounded reassembly |
+| Protocol | `protocol/Protocol`, `protocol/Chunking` | Versioned (v4) schema for text and files, strict validation, filename sanitization, chunking and bounded reassembly |
 | Transport | `net/UdpTransport`, `net/PeerLink`, `net/SecureChannel`, `net/Handshake`, `net/Wire` | One UDP socket with 4 MB buffers, authenticated handshake, encrypted reliable frames and a 4096-frame window |
 | Discovery | `net/rendezvous/TrackerRendezvous`, `net/rendezvous/StunClient`, `net/rendezvous/PublicRendezvous`, `net/dht/DhtClient`, `net/dht/Bencode`, `net/LanBeacon` | BEP 15 tracker and STUN rendezvous on allowed ports; DHT rendezvous on a derived topic; same-subnet beacon |
 | Storage | `data/Db`, `data/MessageRepository`, `data/SecureStore`, `data/SettingsStore` | SQLite contacts, history and transfer state, app-private incoming/outgoing files, per-contact pinned identity, local settings, Keystore-wrapped secrets |
@@ -53,19 +53,22 @@ CONNECTED ──link closed──▶ DISCONNECTED ──backoff──▶ DISCOVE
   deduplicated for 15 s, and the engine filters its own STUN endpoint.
 - Reconnection uses bounded exponential backoff (1.5 s → 30 s) with jitter.
 - Only the **default** network is watched (`registerDefaultNetworkCallback`). Wi-Fi and mobile
-  data coexisting is not an event, and a connected link is never torn down by a network
-  change: the socket re-routes and the peer endpoint follows the authenticated packets.
+  data coexisting is not an event. Every genuine default-network change is different: the old
+  socket and NAT mapping are suspect, so the runtime is torn down and revalidated after a short
+  settle delay even if the status still says `CONNECTED`. The callback's initial `onAvailable`
+  for the network already in use is ignored.
 - One contact is the connection target at a time. `MessageRepository` stores the selected
   contact in `meta`; opening another contact calls `selectContact`, which closes the previous
   runtime, cancels its in-flight file transfers and starts discovery for the new contact's
   invitation. Each contact has its own per-contact outbox sequence and invitation secret.
-- `ConnectionService` is an **opt-in** `dataSync` foreground service. It starts only when
-  `Settings → Background connection` is enabled and the selected contact has an invitation.
-  It holds the engine open with the screen off or the app backgrounded, and its notification
-  mirrors the real state on a silent, minimum-importance channel. With the option off, the
-  engine keeps running for a short grace period after the last activity stops, then closes the
-  socket. There is still no background delivery while the device is powered off or the app is
-  force-stopped.
+- `ConnectionService` is an **always-on** `dataSync` foreground service. It starts whenever a
+  contact with an invitation is paired and restarts after a reboot or app update through
+  `BootReceiver`. It holds the engine open with the screen off or the app backgrounded, and its
+  notification mirrors the real state on a silent, minimum-importance channel. A short
+  background grace period remains only as a fallback when Android refuses to promote the
+  service. Returning to the app after more than five seconds triggers a fresh handshake, and a
+  peer that stops sending heartbeats is considered gone after 15 seconds. There is still no
+  background delivery while the device is powered off or the app is force-stopped.
 - `MessageNotifications` uses a different, high-importance channel only for real incoming
   messages and completed files. `AppVisibility` tracks started activities; the notifier is
   invoked by the engine after persistence and checks that no Knot screen is visible before

@@ -5,7 +5,7 @@
 All checks below were run on the build machine during development. Rebuild locally with the
 included Gradle wrapper to reproduce them.
 
-### JVM unit and integration tests — 86 tests, all passing
+### JVM unit and integration tests — 95 tests, all passing
 
 ```bash
 ./gradlew :app:testDebugUnitTest
@@ -16,7 +16,7 @@ included Gradle wrapper to reproduce them.
 | `crypto.X25519Test` (3) | RFC 7748 section 6.1 public keys and shared secret; all-zero (low-order) point rejected; key pairs agree |
 | `crypto.CryptoTest` (5) | HKDF-SHA256 matches RFC 5869 test case 1; AES-GCM round trip; tampered ciphertext and wrong AAD are rejected |
 | `crypto.InviteTest` (5) | Code round trip, copy-artifact tolerance, malformed/truncated codes rejected, topic deterministic, 20 bytes, derived (not the secret) |
-| `protocol.AppCodecTest` (20) | Text and file round trips (including Unicode), unknown types rejected, truncated payloads rejected, invalid UTF-8 rejected, empty text rejected, absurd timestamps rejected, wrong version rejected, maximum-size text encodable, file offer/data/ack/end/done validation, digest fields and integrity reasons round trip, unknown done reasons rejected, zero-byte offers, oversize rejection, filename sanitization and MIME limits |
+| `protocol.AppCodecTest` (22) | Text and file round trips (including Unicode), unknown types rejected, truncated payloads rejected, invalid UTF-8 rejected, empty text rejected, absurd timestamps rejected, wrong version rejected, maximum-size text encodable, file offer/data/ack/end/done validation, digest fields and integrity reasons round trip, unknown done reasons rejected, zero-byte offers, oversize rejection, filename sanitization, MIME limits and route-hint validation |
 | `protocol.FileDigestTest` (4) | FNV-1a matches published vectors, chunked updates equal a one-shot hash, offset/length slices are respected, different content yields a different digest |
 | `protocol.ChunkingTest` (5) | Out-of-order reassembly, duplicate tolerance, inconsistent counts rejected, oversized chunks rejected, stale assemblies expire, maximum application message reassembled |
 | `net.SecureChannelTest` (5) | Encrypted frame round trip, a 300-frame out-of-order burst inside the widened replay window, duplicate reported without redelivery, frame older than the window rejected, tampering and wrong-key frames rejected |
@@ -26,7 +26,9 @@ included Gradle wrapper to reproduce them.
 | `net.rendezvous.StunClientTest` (2) | XOR-MAPPED-ADDRESS parsing from a real binding-success packet; a reply with a foreign transaction id is ignored |
 | `net.rendezvous.TrackerRendezvousTest` (1) | Real BEP 15 connect/announce byte layout against a local fake tracker: advertised port, `started` event, compact peer parsing, announce throttle |
 | `data.ContactModelTest` (12) | Local label/note sanitization and limits, initials, name fallback order, pairing and invitation flags, contact search, chat-summary sort order and preview formatting for text/files |
-| `data.SettingsModelTest` (6) | Theme parsing and fallback, notification title/body policy with previews on or off, background-service policy, default settings |
+| `data.SettingsModelTest` (8) | Theme parsing and fallback, notification title/body policy with previews on or off, always-on background-service policy, saved-endpoint codec round trip and bounds, default settings |
+| `engine.ConnectionRouteTest` (2) | Route wire codes map to the route that actually carried the link |
+| `ui.StatusUiTest` (3) | Connected status names the live route, falls back to network kind, and never leaks a stale route into a non-connected state |
 
 These tests exercise the real socket path (`DatagramPacket`/`DatagramSocket` on loopback)
 and the real crypto, not mocks. The contact and settings tests cover the pure model/policy
@@ -57,11 +59,11 @@ sha256sum app/build/outputs/apk/*/*.apk
 
 Recorded results:
 
-- all 86 JVM tests pass, including a 2 MiB ordered file-block transfer over loopback UDP;
+- all 95 JVM tests pass, including a 2 MiB ordered file-block transfer over loopback UDP;
 - `:app:lintDebug` completes with no errors (warnings are informational);
 - debug and release APKs build from a clean Gradle cache;
 - the release APK verifies with the local `knot` certificate (v2/v3 signature scheme);
-- package `dev.twoperson.messenger`, versionCode 2, versionName 1.1.0, minSdk 26, targetSdk 34;
+- package `dev.twoperson.messenger`, versionCode 6, versionName 1.2.3, minSdk 26, targetSdk 34;
 - record the SHA-256 of your local build.
 
 ### Not verified here
@@ -152,15 +154,20 @@ label the app displayed (*direct (internet)* / *direct (local network)*).
     name and a private body, and that the lockscreen public version is redacted.
 26. Open one conversation's notification; confirm only that chat opens and its notification is
     cleared while another contact's notification remains.
-27. Enable *Background connection*; confirm the silent ongoing service notification appears and
-    survives backgrounding. Disable it and confirm the notification disappears and the grace
-    period still delivers for a short time.
-28. On Android 13+, revoke notification permission while background mode is on; confirm the
-    service does not crash and Settings still reports the blocked state.
-29. Use *Settings → Delete all contacts & data*; confirm contacts, messages, files, invitations
+27. Pair a contact; confirm the silent ongoing service notification appears immediately and
+    survives backgrounding, screen-off and a device reboot.
+28. With both devices connected, switch one phone from Wi-Fi to mobile data and back. Confirm
+    the status shows a brief *Discovering/Connecting* state and messages continue in both
+    directions without sending a message first.
+29. Background one app for at least 30 seconds, send a message from the other device, and
+    confirm the notification arrives without opening the receiving app. Open it and confirm the
+    message is already in the chat.
+30. On Android 13+, revoke notification permission while the connection is always on; confirm
+    the service does not crash and Settings still reports the blocked state.
+31. Use *Settings → Delete all contacts & data*; confirm contacts, messages, files, invitations
     and local settings are removed, notifications are cleared and the UI returns to a clean
     first-run state.
-30. Upgrade from a v1.0 single-contact install; confirm the old conversation appears as the
+32. Upgrade from a v1.0 single-contact install; confirm the old conversation appears as the
     `primary` contact with its pairing and history intact, and that the old invitation still
     connects.
 
@@ -177,11 +184,10 @@ label the app displayed (*direct (internet)* / *direct (local network)*).
 
 ### Known constraints for the tester
 
-- Both apps must be running while the message or file travels. With **Background connection**
-  enabled, the foreground service keeps the link alive with the screen off; with it off, Knot
-  keeps the link for a short grace period after the last screen closes. Force-stopping either
-  app ends the link until it is opened again. A file transfer pauses with the link and resumes
-  after reconnection while the history is intact.
+- Both apps must be running while the message or file travels. The always-on foreground
+  service keeps the link alive with the screen off, and it restarts after a reboot or app
+  update. Force-stopping either app ends the link until it is opened again. A file transfer
+  pauses with the link and resumes after reconnection while the history is intact.
 - Only one contact is connected at a time. Switching contacts cancels in-flight transfers for
   the previous contact and starts discovery for the newly selected one; queued messages remain
   in that contact's own outbox.

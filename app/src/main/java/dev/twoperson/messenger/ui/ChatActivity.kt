@@ -27,7 +27,6 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import dev.twoperson.messenger.R
-import dev.twoperson.messenger.data.ConnectionMethod
 import dev.twoperson.messenger.data.Contact
 import dev.twoperson.messenger.data.Message
 import dev.twoperson.messenger.data.MessageDirection
@@ -119,8 +118,6 @@ class ChatActivity : KnotActivity() {
         }
         binding.buttonAttach.setOnClickListener { pickFiles() }
         binding.buttonScrollBottom.setOnClickListener { scrollToBottom(smooth = true) }
-        binding.buttonConnectionMethod.setOnClickListener { showConnectionMethodDialog() }
-        renderConnectionMethod(container.settings.current.connectionMethod)
 
         lifecycleScope.launch {
             val selected = container.engine.selectContact(contactId)
@@ -165,11 +162,6 @@ class ChatActivity : KnotActivity() {
                     }
                 }
                 launch { container.engine.status.collect { renderStatus(it) } }
-                launch {
-                    container.settings.settings.collect {
-                        renderConnectionMethod(it.connectionMethod)
-                    }
-                }
             }
         }
     }
@@ -225,20 +217,7 @@ class ChatActivity : KnotActivity() {
         return true
     }
 
-    override fun onPrepareOptionsMenu(menu: Menu): Boolean {
-        menu.findItem(R.id.actionConnectionMethod)?.title = getString(
-            R.string.chat_menu_connection_method_value,
-            getString(StatusUi.connectionMethodLabel(container.settings.current.connectionMethod))
-        )
-        return super.onPrepareOptionsMenu(menu)
-    }
-
     override fun onOptionsItemSelected(item: MenuItem): Boolean = when (item.itemId) {
-        R.id.actionConnectionMethod -> {
-            showConnectionMethodDialog()
-            true
-        }
-
         R.id.actionContactInfo -> {
             startActivity(
                 Intent(this, ContactDetailActivity::class.java)
@@ -683,49 +662,6 @@ class ChatActivity : KnotActivity() {
             }
     }
 
-    private fun renderConnectionMethod(method: ConnectionMethod) {
-        binding.buttonConnectionMethod.text = getString(
-            R.string.chat_connection_method,
-            getString(StatusUi.connectionMethodLabel(method))
-        )
-    }
-
-    private fun showConnectionMethodDialog() {
-        val methods = ConnectionMethod.entries
-        val labels = methods.map {
-            getString(StatusUi.connectionMethodDialogLabel(it))
-        }.toTypedArray()
-        val current = methods.indexOf(container.settings.current.connectionMethod).coerceAtLeast(0)
-        MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.chat_connection_method_dialog)
-            .setSingleChoiceItems(labels, current) { dialog, which ->
-                val method = methods.getOrElse(which) { ConnectionMethod.AUTOMATIC }
-                if (method == ConnectionMethod.LAST_ENDPOINT &&
-                    container.settings.lastPeerEndpoint(contactId) == null
-                ) {
-                    Toast.makeText(
-                        this,
-                        R.string.chat_connection_method_no_endpoint,
-                        Toast.LENGTH_LONG
-                    ).show()
-                    dialog.dismiss()
-                    return@setSingleChoiceItems
-                }
-                container.engine.setConnectionMethod(method)
-                Toast.makeText(
-                    this,
-                    getString(
-                        R.string.chat_connection_method_updated,
-                        getString(StatusUi.connectionMethodLabel(method))
-                    ),
-                    Toast.LENGTH_SHORT
-                ).show()
-                dialog.dismiss()
-            }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
-    }
-
     private fun renderStatus(status: ConnectionStatus) {
         latestStatus = status
         updateKeepScreenOn()
@@ -743,15 +679,7 @@ class ChatActivity : KnotActivity() {
 
             ConnectionState.UNABLE_TO_CONNECT -> {
                 binding.cardBanner.isVisible = true
-                val method = container.settings.current.connectionMethod
-                if (method == ConnectionMethod.AUTOMATIC) {
-                    binding.textBanner.setText(R.string.chat_banner_unable)
-                } else {
-                    binding.textBanner.text = getString(
-                        R.string.chat_banner_unable_method,
-                        getString(StatusUi.connectionMethodLabel(method))
-                    )
-                }
+                binding.textBanner.setText(R.string.chat_banner_unable)
                 binding.textBanner.setTextColor(ContextCompat.getColor(this, R.color.status_error))
             }
 
