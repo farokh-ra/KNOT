@@ -6,7 +6,7 @@
 
 <p><strong>End-User License Agreement &amp; Source Code Protection Notice</strong></p>
 
-<p><code>Version 1.0</code> &nbsp;·&nbsp; Effective <strong>14 November 2026</strong></p>
+<p><code>Version 1.0</code> &nbsp;·&nbsp; Effective <strong>7 November 2026</strong></p>
 
 <p>
   <img alt="License: Proprietary" src="https://img.shields.io/badge/License-Proprietary-B91C1C?style=for-the-badge">
@@ -32,7 +32,7 @@
 |:---|:---|
 | **Document** | Knot Proprietary Software License |
 | **Version** | 1.0 |
-| **Effective date** | 14 November 2026 |
+| **Effective date** | 7 November 2026 |
 | **Licensor** | Farokh RashidAhmadi |
 | **Copyright** | © 2026 Farokh RashidAhmadi. All rights reserved. |
 | **Software** | Knot — Android task and reminder application |
@@ -344,7 +344,7 @@ except to the extent that the claim is caused by the Licensor's negligence, will
 
 <p>Knot is proprietary software. No part of the Software may be copied, modified, distributed, sublicensed, or exploited except as expressly permitted by this License or by mandatory applicable law.</p>
 
-<p><code>Knot Proprietary Software License · Version 1.0 · Effective 14 November 2026</code></p>
+<p><code>Knot Proprietary Software License · Version 1.0 · Effective 7 November 2026</code></p>
 
 <p><strong>END OF LICENSE</strong></p>
 
