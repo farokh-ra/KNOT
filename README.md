@@ -703,6 +703,12 @@ the maintainer directly instead of opening a public issue with exploit details.
 Software developer focused on C#, PHP, HTML, CSS and Windows development — building useful
 software, solving problems and always learning something new.
 
+## License
+
+Knot is proprietary software, not open source. Installing and using official releases is
+permitted under the terms in [`LICENSE.md`](LICENSE.md); copying, modification, redistribution
+and commercial use require prior written permission from the author.
+
 ## Disclaimer
 
 Knot is an experimental, independently developed Android application. It has not been

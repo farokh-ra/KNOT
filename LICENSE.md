@@ -35,7 +35,7 @@
 | **Effective date** | 7 November 2026 |
 | **Licensor** | Farokh RashidAhmadi |
 | **Copyright** | © 2026 Farokh RashidAhmadi. All rights reserved. |
-| **Software** | Knot — Android task and reminder application |
+| **Software** | Knot — Android private messaging application |
 | **Scope** | Application builds, Source Code, documentation, designs, and branding |
 | **Status** | Proprietary · All rights reserved · Not open source |
 | **Contact** | [github.com/farokh-ra](https://github.com/farokh-ra) |
