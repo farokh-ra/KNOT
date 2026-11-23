@@ -25,7 +25,7 @@ included Gradle wrapper to reproduce them.
 | `net.dht.BencodeTest` (5) | Nested round trip with binary strings, canonical dictionary order, malformed input and trailing garbage rejected |
 | `net.rendezvous.StunClientTest` (2) | XOR-MAPPED-ADDRESS parsing from a real binding-success packet; a reply with a foreign transaction id is ignored |
 | `net.rendezvous.TrackerRendezvousTest` (1) | Real BEP 15 connect/announce byte layout against a local fake tracker: advertised port, `started` event, compact peer parsing, announce throttle |
-| `data.ContactModelTest` (12) | Local label/note sanitization and limits, initials, name fallback order, pairing and invitation flags, contact search, chat-summary sort order and preview formatting for text/files |
+| `data.ContactModelTest` (12) | Local label/note sanitization and limits, initials, name fallback order, pairing and invitation flags, contact search, chat-summary sort order and preview formatting for text, files and GIFs |
 | `data.SettingsModelTest` (8) | Theme parsing and fallback, notification title/body policy with previews on or off, always-on background-service policy, saved-endpoint codec round trip and bounds, default settings |
 | `data.ReplyContentTest` (5) | Whitespace collapsing, empty and file quotes, code-point-safe truncation, Persian text preserved |
 | `engine.ConnectionRouteTest` (2) | Route wire codes map to the route that actually carried the link |
@@ -68,12 +68,23 @@ Recorded results:
 - package `dev.twoperson.messenger`, versionCode 8, versionName 1.4.0, minSdk 26, targetSdk 34;
 - record the SHA-256 of your local build.
 
+### Android 15 emulator check (1.4.0)
+
+Two MuMuPlayer Android 15 virtual devices (SM-A156E and SM-A536E) were used to exercise the
+debug build: pairing and direct messaging, quoted replies with no author name, GIF import
+through the system picker, animated gallery tiles, sending from the gallery, animated chat
+bubbles, English/Persian RTL layout and all four settings tabs. Gallery and chat animation
+were confirmed by comparing two screenshots and checking for a non-empty pixel diff.
+
+Not re-run after the emulators lost their direct link: a fresh **incoming** GIF receive. That
+path uses the same stored-file source and `GifLoader` as outgoing bubbles, but it remains part
+of the physical-device checks below.
+
 ### Not verified here
 
-No Android device or emulator is attached to this machine, so the following were **not**
-run: installation, first launch, invitation QR scanning, camera permission flow, on-device
-UI rendering, tab navigation, contact search/rename flows, theme switching, two-phone
-discovery, hole punching, reconnection after a network change, large-file transfer/resume,
+The following physical-device checks were **not** run: invitation QR scanning, camera
+permission flow, contact search/rename flows, theme switching, two-phone discovery over real
+networks, hole punching, reconnection after a network change, large-file transfer/resume,
 notification permission and channel behavior, and battery/data measurements. They are the
 job of the matrix and checks below.
 
