@@ -23,11 +23,11 @@ android {
         applicationId = "dev.twoperson.messenger"
         minSdk = 26
         targetSdk = 34
-        // 6 / 1.2.3: always-on background delivery and prompt revalidation on network/app
-        // resume. The package id and signing key stay stable so an existing install can be
-        // upgraded in place.
-        versionCode = 6
-        versionName = "1.2.3"
+        // 7 / 1.3.0: quoted replies, Telegram-style chat, tabbed settings, English/Farsi
+        // language support and an always-available create/join conversation flow. The package
+        // id and signing key stay stable so an existing install upgrades in place.
+        versionCode = 7
+        versionName = "1.3.0"
         vectorDrawables.useSupportLibrary = true
     }
 

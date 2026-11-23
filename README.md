@@ -10,8 +10,8 @@ Direct, end-to-end encrypted messaging for Android — with no account, no messa
 backend, no relay and no analytics.
 
 [![CI](https://img.shields.io/github/actions/workflow/status/farokh-ra/KNOT/android.yml?branch=main&label=CI&style=flat-square&logo=github)](https://github.com/farokh-ra/KNOT/actions/workflows/android.yml)
-[![Version](https://img.shields.io/badge/version-1.2.3-14B8A6?style=flat-square)](https://github.com/farokh-ra/KNOT)
-[![Tests](https://img.shields.io/badge/tests-95%20passing-22C55E?style=flat-square)](docs/TESTING.md)
+[![Version](https://img.shields.io/badge/version-1.3.0-14B8A6?style=flat-square)](https://github.com/farokh-ra/KNOT)
+[![Tests](https://img.shields.io/badge/tests-107%20passing-22C55E?style=flat-square)](docs/TESTING.md)
 [![Platform](https://img.shields.io/badge/Android-8.0%2B-3DDC84?style=flat-square&logo=android&logoColor=white)](https://developer.android.com)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.0.21-7F52FF?style=flat-square&logo=kotlin&logoColor=white)](https://kotlinlang.org)
 [![Backend](https://img.shields.io/badge/backend-none-0F172A?style=flat-square)](#privacy-by-design)
@@ -26,10 +26,11 @@ backend, no relay and no analytics.
 ---
 
 > [!NOTE]
-> **v1.2.3 — always-on delivery.** Knot keeps the direct link alive whenever a contact is
-> paired, revalidates it after every network change and app resume, and restarts the
-> connection service after a reboot or app update. Messages arrive in the background without
-> sending a wake-up message first. There is still no push service or relay; see
+> **v1.3.0 — conversations that feel familiar.** The chat is now a Telegram-style thread with
+> quoted replies (long-press or swipe a bubble), delivery ticks, follow-at-bottom scrolling and
+> a composer that moves with the keyboard. Settings are split into four short tabs, and every
+> screen is fully translated into English and Persian (فارسی) with an in-app language switch.
+> A create/join sheet is always one tap away. There is still no push service or relay; see
 > [Limitations](#limitations) for the cases a direct-only design cannot cover.
 
 ## Why Knot
@@ -74,7 +75,7 @@ outbox keep both sides listening and retrying.
 |---|---|
 | **App** | Knot |
 | **Package** | `dev.twoperson.messenger` |
-| **Version** | 1.2.3 (versionCode 6) |
+| **Version** | 1.3.0 (versionCode 7) |
 | **Platform** | Android 8.0 (API 26) and newer |
 | **Language** | Kotlin 2.0.21 |
 | **UI** | Android Views, Material 3, ViewBinding |
@@ -87,7 +88,11 @@ outbox keep both sides listening and retrying.
 
 | Area | What you get |
 |---|---|
-| **Private conversations** | A local address book with search, private notes and per-contact invitations. Each contact owns one independent thread, its own secret and a pinned peer identity. |
+| **Private conversations** | A local address book with search, private notes and per-contact invitations. Each contact owns one independent thread, its own secret and a pinned peer identity. Add as many contacts as you like and switch between them freely. |
+| **Telegram-style chat** | Date chips, grouped bubbles, delivery ticks, a floating jump-to-latest button and a follow-at-bottom scroll policy: incoming messages never pull you away while you are reading older ones. |
+| **Quoted replies** | Long-press a bubble (or swipe it right) to reply. The quote travels with the message, survives a local delete and can be tapped to jump back to the original. |
+| **Two languages** | Complete English and Persian (فارسی) translations with RTL layout support and a per-app language switch in Settings; the choice is remembered locally. |
+| **One-tap new conversation** | The create/join button is always on screen on Chats and Contacts. Pick *create a contact & show QR* or *join with a code*, then scan or paste. |
 | **Pair once** | Phone A creates a 32-byte invitation; phone B scans the QR code or pastes the `TPM1-…` code. Both devices derive the same authentication key and rendezvous topic locally. |
 | **Automatic discovery** | UDP trackers, STUN, the BitTorrent DHT and a same-subnet LAN beacon all run in parallel. There is no manual method selector that could put the two phones on different paths. |
 | **Direct connection** | UDP hole punching connects the devices. There is no TURN, relay or forwarding code path in the project. |
@@ -334,7 +339,7 @@ sdk.dir=C\:\\Users\\you\\AppData\\Local\\Android\\Sdk
 ```powershell
 $env:JAVA_HOME = "C:\path\to\jdk-17-or-newer"
 
-.\gradlew.bat :app:testDebugUnitTest      # 95 JVM tests
+.\gradlew.bat :app:testDebugUnitTest      # 107 JVM tests
 .\gradlew.bat :app:lintDebug              # Android lint
 .\gradlew.bat :app:assembleDebug          # debug APK
 .\gradlew.bat :app:assembleRelease        # signed release APK
@@ -413,7 +418,7 @@ build with no native libraries, so it runs on arm64, arm32 and x86 devices with 
 
 ### For the best realtime delivery
 
-1. Install **the same 1.2.3 build on both phones** and open Knot once after pairing.
+1. Install **the same 1.3.0 build on both phones** and open Knot once after pairing.
 2. Keep the silent **Always-on connection** notification enabled. Android requires it while
    the foreground service holds the direct link.
 3. Set Knot's battery usage to **Unrestricted** (Settings → Apps → Knot → Battery, or tap
@@ -432,14 +437,20 @@ build with no native libraries, so it runs on arm64, arm32 and x86 devices with 
 4. Open the conversation and type. Tap the paperclip to attach one or more files. Each file
    appears as a bubble with its size and live progress; tap a completed file to open it, or
    long-press to share it.
-5. The chat scrolls to the bottom after **you** send a message or file, not when an incoming
-   message arrives. A down-arrow button jumps to the latest message.
-6. Rename any contact from the three-dot menu on the **Chats** or **Contacts** list. Renaming is
+5. Long-press any bubble and choose **Reply**, or swipe the bubble to the right. The quoted
+   message appears above the composer and inside your reply; tap a quote to jump back to the
+   original message.
+6. The chat follows new messages while you are at the bottom. Scroll up and incoming messages
+   stop pulling the list; a down-arrow button returns you to the latest. Sending a message
+   always brings you back.
+7. Rename any contact from the three-dot menu on the **Chats** or **Contacts** list. Renaming is
    local only: the other device keeps its own name for you.
-7. Notifications are posted only for real incoming messages and completed files while no Knot
+8. Notifications are posted only for real incoming messages and completed files while no Knot
    screen is visible. Opening a conversation clears its alert.
-8. **Settings** contains the System/Light/Dark theme, the notification-preview switch and the
-   **Always-on connection** card. Tapping the card opens battery settings.
+9. **Settings** is split into **General**, **Chats**, **Privacy** and **About** tabs. General
+   holds the language and theme; Chats holds notifications, previews and the always-on battery
+   shortcut; Privacy holds screen security and the data controls. Screen security blocks
+   screenshots and recent-apps previews; pairing screens are always protected.
 
 Use **Clear conversation** to cancel active transfers and delete local history plus the
 app-private copies that belonged to it (the pairing survives), or **Unpair device** to remove
@@ -452,16 +463,16 @@ every contact, message, file and local setting.
 ./gradlew :app:testDebugUnitTest
 ```
 
-The JVM suite contains **95 tests** across crypto, protocol, files, DHT encoding, STUN, BEP 15
-trackers, secure channel, handshake, a full loopback-UDP peer link, contact models and settings
-policy. The tests use real sockets and real crypto, not mocks.
+The JVM suite contains **107 tests** across crypto, protocol, files, DHT encoding, STUN, BEP 15
+trackers, secure channel, handshake, a full loopback-UDP peer link, contact models, reply
+quotes, scroll policy and settings. The tests use real sockets and real crypto, not mocks.
 
 | Test class | Tests | Focus |
 |---|---:|---|
 | `crypto.X25519Test` | 3 | RFC 7748 vectors, low-order point rejection, key agreement |
 | `crypto.CryptoTest` | 5 | HKDF-SHA256 RFC 5869 vector, AES-GCM round trip, tamper rejection |
 | `crypto.InviteTest` | 5 | Invitation round trip, malformed codes, deterministic derived topic |
-| `protocol.AppCodecTest` | 22 | Text and file schema round trips, UTF-8 and length validation, filename sanitization, unknown types |
+| `protocol.AppCodecTest` | 25 | Text, quoted-reply and file schema round trips, UTF-8 and length validation, truncated replies, filename sanitization, unknown types |
 | `protocol.FileDigestTest` | 4 | FNV-1a vectors, chunked and one-shot hashes agree, offset slices |
 | `protocol.ChunkingTest` | 5 | Out-of-order reassembly, duplicates, maximum-size messages, bounds and expiry |
 | `net.SecureChannelTest` | 5 | Encrypted frames, replay detection, tampering and truncation |
@@ -472,9 +483,11 @@ policy. The tests use real sockets and real crypto, not mocks.
 | `net.rendezvous.TrackerRendezvousTest` | 1 | Real BEP 15 connect/announce format, compact peer parsing, announce throttle |
 | `data.ContactModelTest` | 12 | Name/note sanitization, initials, search, pairing flags, chat sort order and preview formatting |
 | `data.SettingsModelTest` | 8 | Theme parsing, notification preview policy, always-on service policy and defaults |
+| `data.ReplyContentTest` | 5 | Quote whitespace collapsing, empty/file quotes, code-point-safe truncation |
 | `engine.ConnectionRouteTest` | 2 | Route wire codes map to the route that actually carried the link |
+| `ui.ChatScrollPolicyTest` | 4 | Follow-at-bottom, no pull-away while reading, own-message scroll |
 | `ui.StatusUiTest` | 3 | Connected status names the live route, falls back to network kind and never leaks a stale route |
-| **Total** | **95** | |
+| **Total** | **107** | |
 
 `:app:lintDebug` also completes with no lint errors. Build and artifact checks are recorded in
 [`docs/TESTING.md`](docs/TESTING.md), along with the **two-phone test matrix** that still needs to
@@ -501,7 +514,7 @@ KNOT/
 │       │   │   ├── util/             Visibility tracking and theme controller
 │       │   │   └── ui/               Tabbed shell, chat list, contacts, settings, pairing, chat
 │       │   └── res/                  Material 3 themes, layouts, icons, FileProvider paths
-│       └── test/                     95 JVM tests (crypto, protocol, files, loopback link, models)
+│       └── test/                     107 JVM tests (crypto, protocol, replies, loopback link, models)
 ├── docs/                             Architecture, protocol, security, testing, build, install
 ├── gradle/                           Gradle wrapper
 ├── signing/                          Local signing material (git-ignored)
@@ -567,6 +580,22 @@ The complete list is in [`LIMITATIONS.md`](LIMITATIONS.md).
 
 ## Roadmap
 
+**Shipped in 1.3.0**
+
+- Telegram-style conversation screen: date chips, grouped bubbles, delivery ticks, quote
+  blocks and a floating jump-to-latest button.
+- Quoted replies from the long-press menu or a right swipe, carried over the encrypted link
+  with a stable quote snippet.
+- Follow-at-bottom auto-scroll: incoming messages do not move the list while you are reading
+  older ones, and sending always returns to the latest message.
+- Keyboard-aware composer: the whole screen resizes and the latest bubble stays visible.
+- Tabbed settings (General, Chats, Privacy, About) with shorter rows, app language and screen
+  security.
+- Complete English and Persian translations with RTL support and a per-app language switch.
+- Always-available create/join bottom sheet on Chats and Contacts, including both empty states.
+- Invitation screens always block screenshots; copied invitation codes are marked sensitive
+  and cleared from the clipboard after two minutes.
+
 **Shipped in 1.2.3**
 
 - Always-on background delivery: the foreground service starts automatically whenever a
@@ -611,7 +640,7 @@ The complete list is in [`LIMITATIONS.md`](LIMITATIONS.md).
 2. Add invitation expiry/revocation and a clearer re-pairing flow.
 3. Evaluate encryption-at-rest for local history.
 4. Commission an external review of the handshake construction.
-5. Improve accessibility, localization and onboarding polish.
+5. Improve accessibility and onboarding polish (English and Persian now ship in-app).
 
 Items are candidates, not commitments. The non-negotiable constraint remains: **no relay and
 no server that stores or forwards chat content**.

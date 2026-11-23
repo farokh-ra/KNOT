@@ -15,11 +15,15 @@
     <color name="on_surface_variant">#5B6472</color>
     <color name="outline_soft">#DFE5EE</color>
 
-    <!-- Messages -->
+    <!-- Chat canvas and messages -->
+    <color name="chat_background">#EDF1F6</color>
+    <color name="chat_input_background">#EEF2F7</color>
+    <color name="chat_empty_chip">#E3E9F1</color>
     <color name="bubble_out">#2563EB</color>
     <color name="bubble_out_text">#FFFFFF</color>
-    <color name="bubble_in">#EBF0F7</color>
+    <color name="bubble_in">#FFFFFF</color>
     <color name="bubble_in_text">#101827</color>
+    <color name="bubble_in_stroke">#E2E8F0</color>
 
     <!-- Status -->
     <color name="status_ok">#15803D</color>

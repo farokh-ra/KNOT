@@ -231,7 +231,9 @@ class MessageRepository(private val db: Db) {
         id: String,
         body: String,
         createdAt: Long,
-        sequence: Long
+        sequence: Long,
+        replyToId: String? = null,
+        replySnippet: String? = null
     ): Message = withContext(Dispatchers.IO) {
         lock.withLock {
             insertMessageLocked(
@@ -244,7 +246,9 @@ class MessageRepository(private val db: Db) {
                 state = MessageState.PENDING,
                 senderId = "local",
                 kind = MessageKind.TEXT,
-                isRead = true
+                isRead = true,
+                replyToId = replyToId,
+                replySnippet = replySnippet
             )
         }
     }
@@ -290,7 +294,9 @@ class MessageRepository(private val db: Db) {
         body: String,
         createdAt: Long,
         sequence: Long,
-        senderId: String
+        senderId: String,
+        replyToId: String? = null,
+        replySnippet: String? = null
     ): Boolean = withContext(Dispatchers.IO) {
         lock.withLock {
             insertIncomingLocked(
@@ -304,7 +310,9 @@ class MessageRepository(private val db: Db) {
                 fileName = null,
                 mimeType = null,
                 fileSize = 0,
-                transferId = null
+                transferId = null,
+                replyToId = replyToId,
+                replySnippet = replySnippet
             )
         }
     }
@@ -723,7 +731,9 @@ class MessageRepository(private val db: Db) {
         filePath: String? = null,
         transferId: String? = null,
         receivedBytes: Long = 0,
-        transferDigest: Long = 0
+        transferDigest: Long = 0,
+        replyToId: String? = null,
+        replySnippet: String? = null
     ): Message {
         val values = ContentValues().apply {
             put("id", id)
@@ -744,6 +754,8 @@ class MessageRepository(private val db: Db) {
             put("received_bytes", receivedBytes)
             put("transfer_digest", transferDigest)
             put("is_read", if (isRead) 1 else 0)
+            if (replyToId != null) put("reply_to_id", replyToId)
+            if (replySnippet != null) put("reply_snippet", replySnippet)
         }
         db.writableDatabase.insertWithOnConflict(
             "messages", null, values, android.database.sqlite.SQLiteDatabase.CONFLICT_IGNORE
@@ -767,7 +779,9 @@ class MessageRepository(private val db: Db) {
             transferId = transferId,
             receivedBytes = receivedBytes,
             transferDigest = transferDigest,
-            isRead = isRead
+            isRead = isRead,
+            replyToId = replyToId,
+            replySnippet = replySnippet
         )
     }
 
@@ -782,7 +796,9 @@ class MessageRepository(private val db: Db) {
         fileName: String?,
         mimeType: String?,
         fileSize: Long,
-        transferId: String?
+        transferId: String?,
+        replyToId: String? = null,
+        replySnippet: String? = null
     ): Boolean {
         val values = ContentValues().apply {
             put("id", id)
@@ -801,6 +817,8 @@ class MessageRepository(private val db: Db) {
             put("received_bytes", 0)
             put("transfer_digest", 0)
             put("is_read", 0)
+            if (replyToId != null) put("reply_to_id", replyToId)
+            if (replySnippet != null) put("reply_snippet", replySnippet)
         }
         val row = db.writableDatabase.insertWithOnConflict(
             "messages", null, values, android.database.sqlite.SQLiteDatabase.CONFLICT_IGNORE
@@ -890,7 +908,9 @@ class MessageRepository(private val db: Db) {
         transferId = nullableString(14),
         receivedBytes = getLong(15),
         transferDigest = getLong(16),
-        isRead = getInt(17) != 0
+        isRead = getInt(17) != 0,
+        replyToId = nullableString(18),
+        replySnippet = nullableString(19)
     )
 
     private fun dbFileSizeLocked(id: String): Long =
@@ -907,7 +927,8 @@ class MessageRepository(private val db: Db) {
         private const val SELECT_MESSAGES = """
             SELECT id, contact_id, direction, body, created_at, seq, state, sender_id,
                    kind, file_name, mime_type, file_size, file_uri, file_path,
-                   transfer_id, received_bytes, transfer_digest, is_read
+                   transfer_id, received_bytes, transfer_digest, is_read,
+                   reply_to_id, reply_snippet
             FROM messages
         """
     }

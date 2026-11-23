@@ -15,14 +15,18 @@ import android.provider.OpenableColumns
 import android.view.Menu
 import android.view.MenuItem
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.isVisible
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -32,6 +36,7 @@ import dev.twoperson.messenger.data.Message
 import dev.twoperson.messenger.data.MessageDirection
 import dev.twoperson.messenger.data.MessageKind
 import dev.twoperson.messenger.data.MessageState
+import dev.twoperson.messenger.data.ReplyContent
 import dev.twoperson.messenger.databinding.ActivityChatBinding
 import dev.twoperson.messenger.engine.ConnectionState
 import dev.twoperson.messenger.engine.ConnectionStatus
@@ -53,7 +58,9 @@ class ChatActivity : KnotActivity() {
     private var currentContact: Contact? = null
 
     private var initialMessagesLoaded = false
-    private var autoScrollTarget: Int? = null
+    private var scrollOnNextUpdate = false
+    private var atBottom = true
+    private var replyingTo: Message? = null
     private var latestStatus = ConnectionStatus()
     private var finishing = false
 
@@ -96,16 +103,28 @@ class ChatActivity : KnotActivity() {
         supportActionBar?.title = getString(R.string.chat_title)
 
         adapter = ChatAdapter(
+            peerName = { currentContact?.name.orEmpty() },
             onFileClick = ::openFile,
-            onMessageLongClick = ::showMessageActions
+            onMessageLongClick = ::showMessageActions,
+            onReplyClick = { scrollToMessage(it.id) }
         )
         binding.listMessages.layoutManager = LinearLayoutManager(this).apply { stackFromEnd = true }
         binding.listMessages.adapter = adapter
         binding.listMessages.addOnScrollListener(object : RecyclerView.OnScrollListener() {
             override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
+                atBottom = !recyclerView.canScrollVertically(1)
                 updateJumpButton()
             }
         })
+        attachSwipeToReply()
+        binding.buttonCancelReply.setOnClickListener { clearReply() }
+        // The composer keeps its own height when the keyboard opens: adjustResize shrinks the
+        // window, and this listener restores the latest bubble if the reader was following.
+        ViewCompat.setOnApplyWindowInsetsListener(binding.root) { view, insets ->
+            val ime = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
+            if (ime > 0 && atBottom) binding.listMessages.post { scrollToBottom(smooth = false) }
+            insets
+        }
 
         binding.buttonSend.setOnClickListener { send() }
         binding.inputMessage.setOnEditorActionListener { _, actionId, _ ->
@@ -238,19 +257,31 @@ class ChatActivity : KnotActivity() {
         val firstLoad = !initialMessagesLoaded
         initialMessagesLoaded = true
         updateKeepScreenOn()
-        val target = autoScrollTarget
-        val outgoingCount = messages.count { it.direction == MessageDirection.OUTGOING }
-        val shouldScroll = firstLoad || (target != null && outgoingCount >= target)
-        if (shouldScroll) autoScrollTarget = null
+
+        val added = messages.size > adapter.itemCount
+        val latest = messages.lastOrNull()
+        val shouldScroll = firstLoad || scrollOnNextUpdate ||
+            (added && ChatScrollPolicy.shouldFollow(
+                atBottom,
+                latest?.direction == MessageDirection.OUTGOING
+            ))
+        if (shouldScroll) scrollOnNextUpdate = false
 
         adapter.submit(messages) {
             binding.textEmpty.isVisible = messages.isEmpty()
             if (shouldScroll && messages.isNotEmpty()) {
                 scrollToBottom(smooth = !firstLoad)
+            } else {
+                binding.listMessages.post { updateJumpButton() }
             }
-            binding.listMessages.post { updateJumpButton() }
         }
         binding.textEmpty.isVisible = messages.isEmpty()
+
+        // A quote can outlive the message it points at (deleted on one side). Drop the composer
+        // reply bar instead of letting it reference a row that is gone.
+        replyingTo?.let { quoted ->
+            if (messages.none { it.id == quoted.id }) clearReply()
+        }
 
         if (messages.any { it.direction == MessageDirection.INCOMING && !it.isRead }) {
             lifecycleScope.launch {
@@ -260,10 +291,9 @@ class ChatActivity : KnotActivity() {
         }
     }
 
-    /** Arm the next list update for the outgoing message this send is about to insert. */
+    /** The next list update must reveal the message this send is about to insert. */
     private fun armAutoScroll() {
-        autoScrollTarget = container.repository.messages.value
-            .count { it.direction == MessageDirection.OUTGOING } + 1
+        scrollOnNextUpdate = true
     }
 
     private fun scrollToBottom(smooth: Boolean) {
@@ -274,17 +304,70 @@ class ChatActivity : KnotActivity() {
         } else {
             binding.listMessages.scrollToPosition(target)
         }
+        atBottom = true
         binding.buttonScrollBottom.isVisible = false
     }
 
     private fun updateJumpButton() {
-        if (adapter.itemCount == 0) {
-            binding.buttonScrollBottom.isVisible = false
-            return
+        binding.buttonScrollBottom.isVisible = adapter.itemCount > 0 && !atBottom
+    }
+
+    /** Swipe a bubble to the right to quote it, like Telegram. */
+    private fun attachSwipeToReply() {
+        val callback = object : ItemTouchHelper.SimpleCallback(0, ItemTouchHelper.RIGHT) {
+            override fun onMove(
+                recyclerView: RecyclerView,
+                viewHolder: RecyclerView.ViewHolder,
+                target: RecyclerView.ViewHolder
+            ): Boolean = false
+
+            override fun onSwiped(viewHolder: RecyclerView.ViewHolder, direction: Int) {
+                val position = viewHolder.bindingAdapterPosition
+                val message = adapter.currentList.getOrNull(position) ?: return
+                adapter.notifyItemChanged(position)
+                showReply(message)
+            }
+
+            override fun getSwipeThreshold(viewHolder: RecyclerView.ViewHolder): Float = 0.22f
         }
-        val layoutManager = binding.listMessages.layoutManager as? LinearLayoutManager ?: return
-        val lastVisible = layoutManager.findLastVisibleItemPosition()
-        binding.buttonScrollBottom.isVisible = lastVisible < adapter.itemCount - 1
+        ItemTouchHelper(callback).attachToRecyclerView(binding.listMessages)
+    }
+
+    private fun showReply(message: Message) {
+        replyingTo = message
+        binding.replyBar.isVisible = true
+        binding.textReplyAuthor.text = if (message.direction == MessageDirection.OUTGOING) {
+            getString(R.string.chat_reply_you)
+        } else {
+            currentContact?.name ?: getString(R.string.chat_reply_peer)
+        }
+        binding.textReplySnippet.text = if (message.kind == MessageKind.FILE) {
+            ReplyContent.snippet(message.body, isFile = true, fileName = message.fileName)
+        } else {
+            ReplyContent.snippet(message.body)
+        }
+        binding.inputMessage.requestFocus()
+        try {
+            getSystemService(InputMethodManager::class.java)
+                ?.showSoftInput(binding.inputMessage, InputMethodManager.SHOW_IMPLICIT)
+        } catch (e: Exception) {
+            // Some keyboards refuse to open without a user gesture; the composer still works.
+        }
+    }
+
+    private fun clearReply() {
+        replyingTo = null
+        binding.replyBar.isVisible = false
+        binding.textReplyAuthor.text = ""
+        binding.textReplySnippet.text = ""
+    }
+
+    private fun scrollToMessage(messageId: String) {
+        val index = adapter.currentList.indexOfFirst { it.id == messageId }
+        if (index < 0) return
+        atBottom = index == adapter.itemCount - 1
+        (binding.listMessages.layoutManager as? LinearLayoutManager)
+            ?.scrollToPositionWithOffset(index, binding.listMessages.height / 3)
     }
 
     private fun send() {
@@ -299,12 +382,22 @@ class ChatActivity : KnotActivity() {
             return
         }
         binding.inputMessageLayout.error = null
+        val quoted = replyingTo
+        val quoteSnippet = quoted?.let {
+            if (it.kind == MessageKind.FILE) {
+                ReplyContent.snippet(it.body, isFile = true, fileName = it.fileName)
+            } else {
+                ReplyContent.snippet(it.body)
+            }
+        }
         armAutoScroll()
         lifecycleScope.launch {
-            val queued = container.engine.sendText(raw)
+            val queued = container.engine.sendText(raw, quoted?.id, quoteSnippet)
             if (queued) {
                 binding.inputMessage.setText("")
+                clearReply()
             } else {
+                scrollOnNextUpdate = false
                 binding.inputMessageLayout.error = getString(R.string.chat_too_long)
             }
         }
@@ -406,6 +499,14 @@ class ChatActivity : KnotActivity() {
 
     private fun showMessageActions(message: Message) {
         val actions = ArrayList<Pair<String, () -> Unit>>()
+        actions += getString(R.string.chat_action_reply) to { showReply(message) }
+        if (message.isReply) {
+            message.replyToId?.let { original ->
+                actions += getString(R.string.chat_action_go_to_quoted) to {
+                    scrollToMessage(original)
+                }
+            }
+        }
         if (message.kind == MessageKind.TEXT) {
             actions += getString(R.string.chat_action_copy) to { copyText(message.body) }
         }
@@ -520,10 +621,10 @@ class ChatActivity : KnotActivity() {
                     false
                 }
             } else {
-                val directory = File(
-                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-                    "Knot"
+                val downloads = Environment.getExternalStoragePublicDirectory(
+                    Environment.DIRECTORY_DOWNLOADS
                 )
+                val directory = File(downloads, "Knot")
                 if (!directory.isDirectory && !directory.mkdirs()) return false
                 val target = uniqueDownloadFile(directory, name)
                 target.outputStream().use { source.copyTo(it) }

@@ -3,6 +3,7 @@ package dev.twoperson.messenger
 import android.app.Application
 import android.content.Context
 import androidx.appcompat.app.AppCompatDelegate
+import androidx.core.os.LocaleListCompat
 import dev.twoperson.messenger.data.Db
 import dev.twoperson.messenger.data.MessageRepository
 import dev.twoperson.messenger.data.SecureStore
@@ -65,7 +66,22 @@ class App : Application() {
         super.onCreate()
         val settings = SettingsStore(this)
         AppCompatDelegate.setDefaultNightMode(ThemeController.delegateMode(settings.current.theme))
+        applyLanguage(settings.current.language)
         MessageNotifications.ensureChannels(this)
         container = AppContainer(this, settings)
+    }
+
+    companion object {
+        /** Applies the saved language through AppCompat, which also backports it below API 33. */
+        fun applyLanguage(language: dev.twoperson.messenger.data.AppLanguage) {
+            val tag = language.languageTag
+            AppCompatDelegate.setApplicationLocales(
+                if (tag == null) {
+                    LocaleListCompat.getEmptyLocaleList()
+                } else {
+                    LocaleListCompat.forLanguageTags(tag)
+                }
+            )
+        }
     }
 }

@@ -1,0 +1,312 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <string name="app_name">Knot</string>
+
+    <!-- Bottom navigation and shell -->
+    <string name="nav_chats">گفتگوها</string>
+    <string name="nav_contacts">مخاطبین</string>
+    <string name="nav_settings">تنظیمات</string>
+    <string name="home_chats_title">گفتگوها</string>
+    <string name="home_contacts_title">مخاطبین</string>
+    <string name="home_settings_title">تنظیمات</string>
+
+    <!-- Chats -->
+    <string name="chats_empty_title">هنوز گفتگویی ندارید</string>
+    <string name="chats_empty_body">یک مخاطب اضافه کنید، دستگاه دیگر را یک‌بار متصل کنید و گفتگوی خصوصی شما اینجا ظاهر می‌شود. پیام‌هایی که آفلاین می‌فرستید در همین دستگاه در صف می‌مانند.</string>
+    <string name="chats_new_chat">گفتگوی جدید</string>
+    <string name="chats_join_code">پیوستن با کد</string>
+
+    <plurals name="chats_unread_content_description">
+        <item quantity="one">%1$d پیام خوانده‌نشده</item>
+        <item quantity="other">%1$d پیام خوانده‌نشده</item>
+    </plurals>
+    <string name="chats_rename_title">نام مخاطب</string>
+    <string name="chats_rename_hint">نامی که فقط در این دستگاه نمایش داده می‌شود</string>
+    <string name="chats_rename_save">ذخیره نام</string>
+    <string name="chats_renamed">نام مخاطب به‌روز شد</string>
+    <string name="chats_clear_title">این گفتگو پاک شود؟</string>
+    <string name="chats_clear_message">پیام‌ها و فایل‌های خصوصی این دستگاه حذف می‌شوند. اتصال و مخاطب باقی می‌مانند. این کار برگشت‌پذیر نیست.</string>
+    <string name="chats_clear_ok">پاک کردن گفتگو</string>
+    <string name="chats_cleared">گفتگو پاک شد</string>
+    <string name="chats_delete_title">این مخاطب حذف شود؟</string>
+    <string name="chats_delete_message">مخاطب، دعوت‌نامه، تاریخچه پیام‌ها و فایل‌های خصوصی برای همیشه از این دستگاه حذف می‌شوند.</string>
+    <string name="chats_delete_ok">حذف مخاطب</string>
+    <string name="chats_deleted">مخاطب حذف شد</string>
+    <string name="chats_new_contact_title">مخاطب جدید</string>
+    <string name="chats_new_contact_body">نامی وارد کنید که او را بشناسید. هر زمان از فهرست گفتگوها می‌توانید تغییرش دهید.</string>
+    <string name="chats_new_contact_create">ساخت مخاطب</string>
+    <string name="chats_new_contact_added">مخاطب ساخته شد</string>
+    <string name="chats_contact_hint">برای باز کردن گفتگو ضربه بزنید</string>
+    <string name="chats_open_info">اطلاعات مخاطب</string>
+    <string name="chats_mark_read">خوانده‌شده</string>
+    <string name="chats_menu_more">اقدامات بیشتر</string>
+
+    <!-- Contacts -->
+    <string name="contacts_search_hint">جستجوی مخاطبین</string>
+    <string name="contacts_empty_title">هنوز مخاطبی ندارید</string>
+    <string name="contacts_empty_body">مخاطبین فقط در این دستگاه ذخیره می‌شوند. کسی را اضافه کنید، سپس دعوت‌نامه بسازید یا بپیوندید تا گفتگوی خصوصی شروع شود.</string>
+    <string name="contacts_add">افزودن مخاطب</string>
+    <string name="contacts_name_hint">نام (اختیاری)</string>
+    <string name="contacts_note_hint">یادداشت خصوصی (اختیاری)</string>
+    <plurals name="contacts_found">
+        <item quantity="one">%1$d مخاطب</item>
+        <item quantity="other">%1$d مخاطب</item>
+    </plurals>
+    <string name="contacts_no_results">هیچ مخاطبی با این جستجو پیدا نشد.</string>
+    <string name="contacts_state_active">فعال</string>
+    <string name="contacts_state_paired">متصل</string>
+    <string name="contacts_state_invitation">دعوت آماده</string>
+    <string name="contacts_state_local">متصل‌نشده</string>
+    <string name="contacts_rename_title">تغییر نام مخاطب</string>
+    <string name="contacts_renamed">نام مخاطب تغییر کرد</string>
+
+    <!-- Contact detail -->
+    <string name="contact_title">مخاطب</string>
+    <string name="contact_info_title">اطلاعات مخاطب</string>
+    <string name="contact_name_hint">مثلاً علی</string>
+    <string name="contact_note_hint">فقط در این دستگاه دیده می‌شود</string>
+    <string name="contact_save">ذخیره تغییرات</string>
+    <string name="contact_saved">مخاطب به‌روز شد</string>
+    <string name="contact_open_chat">باز کردن گفتگو</string>
+    <string name="contact_connection_title">اتصال</string>
+    <string name="contact_connection_active">این گفتگوی فعال است. Knot هر بار فقط یک اتصال مستقیم دارد.</string>
+    <string name="contact_connection_inactive">مخاطب دیگری فعال است. با باز کردن این مخاطب، مقصد اتصال تغییر می‌کند.</string>
+    <string name="contact_pairing_title">اتصال</string>
+    <string name="contact_pairing_note">یک‌بار با دعوت‌نامه یک‌بارمصرف متصل شوید. Knot بعد از آن خودکار وصل می‌شود.</string>
+    <string name="contact_show_invitation">نمایش دعوت‌نامه</string>
+    <string name="contact_new_invitation">دعوت‌نامه جدید</string>
+    <string name="contact_join_invitation">پیوستن با کد</string>
+    <string name="contact_replace_title">اتصال فعلی جایگزین شود؟</string>
+    <string name="contact_replace_message">دعوت‌نامه جدید، قبلی را باطل می‌کند. دستگاه دیگر باید دوباره متصل شود، اما تاریخچه محلی می‌ماند.</string>
+    <string name="contact_replace_ok">ساخت دعوت‌نامه جدید</string>
+    <string name="contact_unpair">قطع اتصال دستگاه</string>
+    <string name="contact_unpair_title">این دستگاه قطع شود؟</string>
+    <string name="contact_unpair_message">دعوت‌نامه از این دستگاه حذف می‌شود و باید دوباره متصل شوید. پیام‌های محلی حفظ می‌شوند.</string>
+    <string name="contact_unpaired">دستگاه قطع شد</string>
+    <string name="contact_clear">پاک کردن گفتگو</string>
+    <string name="contact_delete">حذف مخاطب</string>
+    <string name="contact_delete_title">این مخاطب حذف شود؟</string>
+    <string name="contact_delete_message">این کار مخاطب، اتصال، پیام‌ها و فایل‌های خصوصی را برای همیشه از این دستگاه حذف می‌کند.</string>
+    <string name="contact_device_line">دستگاه: %1$s</string>
+    <string name="contact_paired_on">متصل‌شده %1$s</string>
+    <string name="contact_not_paired_yet">هنوز متصل نشده</string>
+    <string name="contact_identity_line">شناسه %1$s</string>
+
+    <!-- Chat -->
+    <string name="chat_title">گفتگو</string>
+    <string name="chat_input_hint">پیام</string>
+    <string name="chat_send">ارسال</string>
+    <string name="chat_attach">پیوست فایل</string>
+    <string name="chat_attach_failed">آن فایل خوانده نشد.</string>
+    <string name="chat_attach_too_large">آن فایل از محدودیت ۴ ترابایت بزرگ‌تر است.</string>
+    <plurals name="chat_attach_started">
+        <item quantity="one">%1$d فایل در صف قرار گرفت</item>
+        <item quantity="other">%1$d فایل در صف قرار گرفت</item>
+    </plurals>
+    <string name="chat_empty">هنوز پیامی نیست. پیام‌های آفلاین در این دستگاه در صف می‌مانند.</string>
+    <string name="chat_banner_reconnecting">اتصال مستقیم دوباره برقرار می‌شود — پیام‌ها و فایل‌ها در صف می‌مانند</string>
+    <string name="chat_banner_unable">اتصال مستقیم در این شبکه‌ها ممکن نیست</string>
+    <string name="chat_clear_confirm_title">گفتگو پاک شود؟</string>
+    <string name="chat_clear_confirm_message">تاریخچه پیام این دستگاه حذف می‌شود. برگشت‌پذیر نیست.</string>
+    <string name="chat_clear_confirm_ok">پاک کردن</string>
+    <string name="chat_too_long">این پیام بیش از حد بلند است.</string>
+    <string name="chat_not_paired">ابتدا با دستگاه دیگر متصل شوید.</string>
+    <string name="chat_jump_latest">رفتن به آخرین پیام</string>
+    <string name="chat_menu_clear">پاک کردن گفتگو</string>
+    <string name="chat_menu_info">اطلاعات مخاطب</string>
+    <string name="chat_file_open">باز کردن فایل</string>
+    <string name="chat_file_open_failed">هیچ برنامه‌ای نمی‌تواند این فایل را باز کند.</string>
+    <string name="chat_file_not_ready">این فایل هنوز در حال انتقال است.</string>
+    <string name="chat_file_unavailable">فایل دیگر در این دستگاه موجود نیست.</string>
+    <string name="chat_file_share">اشتراک فایل</string>
+    <string name="chat_file_saved">در Downloads/Knot ذخیره شد</string>
+    <string name="chat_file_save_failed">فایل ذخیره نشد.</string>
+    <string name="chat_file_save_permission">برای ذخیره فایل به مجوز حافظه نیاز است.</string>
+    <string name="chat_message_actions">اقدامات پیام</string>
+    <string name="chat_action_copy">کپی متن</string>
+    <string name="chat_action_retry">تلاش دوباره برای ارسال</string>
+    <string name="chat_action_delete">حذف</string>
+    <string name="chat_action_open">باز کردن</string>
+    <string name="chat_action_save">ذخیره در Downloads</string>
+    <string name="chat_action_share">اشتراک</string>
+    <string name="chat_delete_confirm_title">این پیام حذف شود؟</string>
+    <string name="chat_delete_confirm_message">از این دستگاه حذف می‌شود. فایلی که نرسیده باشد لغو می‌شود.</string>
+    <string name="chat_delete_confirm_ok">حذف</string>
+    <string name="chat_retry_started">در حال تلاش…</string>
+    <string name="chat_retry_failed">این پیام قابل تلاش دوباره نیست.</string>
+    <string name="chat_missing_contact">این مخاطب دیگر وجود ندارد.</string>
+
+    <!-- Pairing -->
+    <string name="pairing_title">اتصال دستگاه‌ها</string>
+    <string name="pairing_contact_title">اتصال %1$s</string>
+    <string name="pairing_warning">کد دعوت یک راز است. هر کسی آن را داشته باشد می‌تواند به شما وصل شود؛ بنابراین فقط با کسی که می‌خواهید صحبت کنید و از راهی مطمئن به اشتراک بگذارید.</string>
+    <string name="pairing_section_show">کد دعوت شما</string>
+    <string name="pairing_show_hint">این کد QR را به دستگاه دیگر نشان دهید یا کد را کپی و خودتان بفرستید.</string>
+    <string name="pairing_waiting">در انتظار اتصال دستگاه دیگر…</string>
+    <string name="pairing_copy">کپی کد</string>
+    <string name="pairing_copied">کد در کلیپ‌بورد کپی شد</string>
+    <string name="pairing_section_enter">کد دعوت او را وارد کنید</string>
+    <string name="pairing_code_hint">TPM1-XXXX-XXXX-…</string>
+    <string name="pairing_scan">اسکن کد QR</string>
+    <string name="pairing_join">پیوستن</string>
+    <string name="pairing_invalid">این کد معتبر نیست. بررسی کنید و دوباره تلاش کنید.</string>
+    <string name="pairing_button_done">تمام</string>
+    <string name="pairing_camera_permission">برای اسکن کد QR به مجوز دوربین نیاز است.</string>
+    <string name="pairing_scan_prompt">دوربین را به کد QR دستگاه دیگر بگیرید</string>
+    <string name="pairing_joined_note">در انتظار اتصال مستقیم. هر دو برنامه را روی همان دعوت‌نامه باز نگه دارید.</string>
+    <string name="pairing_paired">متصل شد. می‌توانید گفتگو را شروع کنید.</string>
+    <string name="pairing_missing_contact">ابتدا یک مخاطب انتخاب کنید.</string>
+
+    <!-- Connection states -->
+    <string name="state_not_paired">متصل‌نشده</string>
+    <string name="state_discovering">جستجوی دستگاه دیگر…</string>
+    <string name="state_connecting">برقراری اتصال مستقیم…</string>
+    <string name="state_connected_internet">متصل — مستقیم از اینترنت</string>
+    <string name="state_connected_lan">متصل — مستقیم در شبکه محلی</string>
+    <string name="state_connected_via_lan">متصل از شبکه محلی</string>
+    <string name="state_connected_via_udp_tracker">متصل از طریق ردیاب UDP</string>
+    <string name="state_connected_via_dht">متصل از طریق DHT بیت‌تورنت</string>
+    <string name="state_connected_via_last_endpoint">متصل از طریق آخرین نقطه شناخته‌شده</string>
+    <string name="state_disconnected">قطع شد — تلاش دوباره</string>
+    <string name="state_unable">اتصال مستقیم ممکن نیست</string>
+    <string name="state_idle">شروع نشده</string>
+
+    <!-- Settings -->
+    <string name="settings_theme">پوسته</string>
+    <string name="settings_theme_system">دنبال سیستم</string>
+    <string name="settings_theme_light">روشن</string>
+    <string name="settings_theme_dark">تیره</string>
+    <string name="settings_theme_dialog">انتخاب پوسته</string>
+    <string name="settings_notification_permission">اعلان پیام‌ها</string>
+    <string name="settings_notification_enable">فعال کردن</string>
+    <string name="settings_notification_settings">باز کردن تنظیمات سیستم</string>
+    <string name="settings_previews">نمایش پیش‌نمایش پیام</string>
+    <string name="settings_background">اتصال همیشه‌فعال</string>
+    <string name="settings_clear_all">پاک کردن همه گفتگوها</string>
+    <string name="settings_clear_all_confirm">همه گفتگوها پاک شوند؟ برگشت‌پذیر نیست.</string>
+    <string name="settings_clear_all_done">همه گفتگوها پاک شد</string>
+    <string name="settings_delete_all">حذف همه مخاطبین و داده‌ها</string>
+    <string name="settings_delete_all_confirm_title">همه‌چیز حذف شود؟</string>
+    <string name="settings_delete_all_confirm_message">این کار همه مخاطبین، اتصال‌ها، پیام‌ها، فایل‌ها و تنظیمات را برای همیشه از این دستگاه حذف می‌کند. پشتیبانی وجود ندارد.</string>
+    <string name="settings_delete_all_confirm_ok">حذف همه‌چیز</string>
+    <string name="settings_delete_all_done">همه داده‌های محلی حذف شد</string>
+    <string name="settings_about">درباره Knot</string>
+    <string name="settings_version">نسخه %1$s</string>
+    <string name="settings_theme_updated">پوسته به‌روز شد</string>
+
+    <!-- Notifications -->
+    <string name="notif_channel_name">اتصال همیشه‌فعال</string>
+    <string name="notif_channel_desc">اعلان بی‌صدا و کم‌اهمیت که وقتی Knot اتصال مستقیم را برای دریافت لحظه‌ای باز نگه می‌دارد نمایش داده می‌شود.</string>
+    <string name="notif_title">Knot</string>
+    <string name="notif_text_connected_lan">متصل — مستقیم در شبکه محلی</string>
+    <string name="notif_text_connected_internet">متصل — مستقیم از اینترنت</string>
+    <string name="notif_text_reconnecting">اتصال مستقیم دوباره…</string>
+    <string name="notif_text_unable">اتصال مستقیم ممکن نیست — تلاش دوباره</string>
+    <string name="notif_text_not_paired">متصل‌نشده</string>
+    <string name="notif_text_idle">شروع نشده</string>
+    <string name="notif_messages_channel_name">پیام‌ها</string>
+    <string name="notif_messages_channel_desc">اعلان فقط وقتی پیام یا فایل جدید واقعاً در پس‌زمینه برسد.</string>
+    <string name="notif_new_file">یک فایل فرستاد: %1$s</string>
+    <string name="notif_private_preview">برای خواندن پیام Knot را باز کنید</string>
+    <string name="notif_private_file">برای دیدن فایل Knot را باز کنید</string>
+    <plurals name="notif_unread_count">
+        <item quantity="one">%1$d پیام خوانده‌نشده</item>
+        <item quantity="other">%1$d پیام خوانده‌نشده</item>
+    </plurals>
+    <string name="notif_summary_title">پیام‌های جدید</string>
+    <plurals name="notif_summary_text">
+        <item quantity="one">%1$d پیام خوانده‌نشده در گفتگوهای شما</item>
+        <item quantity="other">%1$d پیام خوانده‌نشده در گفتگوهای شما</item>
+    </plurals>
+
+    <!-- About -->
+    <string name="about_title">درباره</string>
+    <string name="about_hero_subtitle">دو دستگاه. یک رشته خصوصی.</string>
+    <string name="about_version">نسخه %1$s · اندروید</string>
+    <string name="about_made_by">طراحی و توسعه توسط</string>
+    <string name="about_author">Farokh-Ra</string>
+    <string name="about_author_role">توسعه‌دهنده نرم‌افزار · پروژه مستقل</string>
+    <string name="about_links_title">پیوندهای پروژه</string>
+    <string name="about_github">مخزن GitHub</string>
+    <string name="about_github_value">github.com/farokh-ra/KNOT</string>
+    <string name="about_telegram">تلگرام</string>
+    <string name="about_telegram_value">@Farokhrex</string>
+    <string name="about_features_title">Knot روی چه اصولی است</string>
+    <string name="about_feature_direct_title">مستقیم به‌طور پیش‌فرض</string>
+    <string name="about_feature_direct_body">اگر دو دستگاه نتوانند به هم برسند، Knot می‌گوید. هیچ رله‌ای پنهان در کار نیست.</string>
+    <string name="about_feature_private_title">رمزنگاری سرتاسری</string>
+    <string name="about_feature_private_body">توافق کلید X25519، HKDF-SHA256 و AES-256-GCM از هر پیام و بلوک فایل محافظت می‌کنند.</string>
+    <string name="about_feature_serverless_title">بدون حساب، بدون سرور</string>
+    <string name="about_feature_serverless_body">بدون تحلیل، ردیابی یا بک‌اند میزبانی‌شده. تاریخچه شما در محیط ایزوله برنامه است.</string>
+    <string name="about_feature_files_title">فایل‌های هر اندازه</string>
+    <string name="about_feature_files_body">در بلوک‌های رمزنگاری‌شده با پیشرفت، ادامه و بررسی خلاصه سرتاسری جریان می‌یابند.</string>
+    <string name="about_privacy_title">ابزاری کوچک و صادق</string>
+    <string name="about_privacy_body">Knot یک برنامه اندرویدی مستقل و آزمایشی است. شبکه همتاهبهمتا نمی‌تواند از هر NAT یا فایروالی عبور کند و دست‌دادن رمزنگاری‌شده هنوز بازبینی بیرونی نشده است. جایی استفاده کنید که هر دو طرف این محدودیت‌ها را بپذیرند.</string>
+    <string name="about_open_source">کد منبع در GitHub است. مشارکت و گزارش تست شبکه خوش‌آمد است.</string>
+    <string name="about_copyright">© ۲۰۲۶ Farokh-Ra. با دقت برای گفتگوهای خصوصی ساخته شده.</string>
+
+    <!-- Message states -->
+    <string name="message_state_pending">در صف</string>
+    <string name="message_state_sent">به مخاطب ارسال شد</string>
+    <string name="message_state_delivered">توسط مخاطب دریافت شد</string>
+    <string name="message_state_failed">تحویل نشد</string>
+    <string name="message_date_today">امروز</string>
+    <string name="message_date_yesterday">دیروز</string>
+
+    <!-- Files -->
+    <string name="file_state_sending">در حال ارسال… %1$d%%</string>
+    <string name="file_state_receiving">در حال دریافت… %1$d%%</string>
+    <string name="file_state_waiting">در انتظار اتصال</string>
+    <string name="file_state_failed">انتقال ناموفق</string>
+    <string name="file_state_ready">برای باز کردن ضربه بزنید</string>
+    <string name="file_size_and_state">%1$s · %2$s</string>
+    <string name="file_info_with_speed">%1$s · %2$s بر ثانیه</string>
+
+    <!-- Preview formatting -->
+    <string name="home_preview_you">شما: %1$s</string>
+    <string name="home_file_preview">فایل · %1$s</string>
+    <string name="chat_preview_empty">هنوز پیامی نیست</string>
+
+    <!-- Chat reply -->
+    <string name="chat_back">بازگشت</string>
+    <string name="chat_cancel_reply">لغو پاسخ</string>
+    <string name="chat_action_reply">پاسخ</string>
+    <string name="chat_action_go_to_quoted">رفتن به پیام نقل‌شده</string>
+    <string name="chat_reply_you">شما</string>
+    <string name="chat_reply_peer">مخاطب</string>
+    <string name="chat_reply_unknown">پاسخ</string>
+
+    <!-- New conversation sheet -->
+    <string name="new_conversation_title">گفتگوی جدید</string>
+    <string name="new_conversation_create_title">ساخت مخاطب و نمایش QR</string>
+    <string name="new_conversation_create_body">دستگاه دیگر کد شما را اسکن می‌کند.</string>
+    <string name="new_conversation_join_title">پیوستن با کد</string>
+    <string name="new_conversation_join_body">دعوت‌نامه او را اسکن یا جای‌گذاری کنید.</string>
+    <string name="chats_join_code_body">نام مخاطب را وارد کنید، سپس کد QR او را اسکن یا دعوت‌نامه‌اش را جای‌گذاری کنید.</string>
+
+    <!-- Settings tabs -->
+    <string name="settings_tab_general">عمومی</string>
+    <string name="settings_tab_chats">گفتگوها</string>
+    <string name="settings_tab_privacy">حریم خصوصی</string>
+    <string name="settings_tab_about">درباره</string>
+    <string name="settings_language">زبان</string>
+    <string name="settings_language_system">پیش‌فرض سیستم</string>
+    <string name="settings_language_system_short">سیستم</string>
+    <string name="settings_language_english">English</string>
+    <string name="settings_language_farsi">فارسی</string>
+    <string name="settings_language_dialog">انتخاب زبان</string>
+    <string name="settings_theme_system_short">سیستم</string>
+    <string name="settings_screen_security">امنیت صفحه</string>
+    <string name="settings_screen_security_desc">جلوگیری از اسکرین‌شات و پیش‌نمایش در برنامه‌های اخیر.</string>
+    <string name="settings_notification_on_short">روشن</string>
+    <string name="settings_notification_off_short">خاموش</string>
+    <string name="settings_privacy_short">بدون حساب، بدون تحلیل، بدون سروری که پیام‌های شما را ذخیره کند.</string>
+
+    <!-- Generic -->
+    <string name="cancel">لغو</string>
+    <string name="save">ذخیره</string>
+    <string name="copied">کپی شد</string>
+    <string name="generic_error">مشکلی پیش آمد. دوباره تلاش کنید.</string>
+
+</resources>

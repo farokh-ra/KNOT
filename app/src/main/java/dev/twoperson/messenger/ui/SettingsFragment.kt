@@ -9,6 +9,7 @@ import android.provider.Settings
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.view.isVisible
@@ -17,8 +18,11 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.tabs.TabLayout
+import dev.twoperson.messenger.App
 import dev.twoperson.messenger.BuildConfig
 import dev.twoperson.messenger.R
+import dev.twoperson.messenger.data.AppLanguage
 import dev.twoperson.messenger.data.AppSettings
 import dev.twoperson.messenger.data.ThemeMode
 import dev.twoperson.messenger.databinding.FragmentSettingsBinding
@@ -27,7 +31,10 @@ import dev.twoperson.messenger.service.MessageNotifications
 import dev.twoperson.messenger.util.ThemeController
 import kotlinx.coroutines.launch
 
-/** Settings tab: local appearance, notification and data controls. */
+/**
+ * Settings tab: four short sections behind tabs. Every row is a single line with its current
+ * value on the right; the longer explanations live in the documentation, not in the screen.
+ */
 class SettingsFragment : Fragment() {
 
     private var _binding: FragmentSettingsBinding? = null
@@ -53,7 +60,14 @@ class SettingsFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         binding.textVersion.text = getString(R.string.settings_version, BuildConfig.VERSION_NAME)
+        showSection(0)
+        binding.settingsTabs.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
+            override fun onTabSelected(tab: TabLayout.Tab) = showSection(tab.position)
+            override fun onTabUnselected(tab: TabLayout.Tab) = Unit
+            override fun onTabReselected(tab: TabLayout.Tab) = Unit
+        })
 
+        binding.rowLanguage.setOnClickListener { showLanguageDialog() }
         binding.rowTheme.setOnClickListener { showThemeDialog() }
         binding.buttonNotificationAction.setOnClickListener { handleNotificationAction() }
         binding.switchPreviews.setOnCheckedChangeListener { _, checked ->
@@ -61,6 +75,12 @@ class SettingsFragment : Fragment() {
         }
         binding.rowPreviews.setOnClickListener { binding.switchPreviews.toggle() }
         binding.rowBackground.setOnClickListener { openBatterySettings() }
+        binding.switchScreenSecurity.setOnCheckedChangeListener { _, checked ->
+            if (rendering) return@setOnCheckedChangeListener
+            container.settings.setScreenSecurity(checked)
+            applyScreenSecurityFlag(checked)
+        }
+        binding.rowScreenSecurity.setOnClickListener { binding.switchScreenSecurity.toggle() }
         binding.rowClearAll.setOnClickListener { confirmClearAll() }
         binding.rowDeleteAll.setOnClickListener { confirmDeleteAll() }
         binding.rowAbout.setOnClickListener {
@@ -84,18 +104,54 @@ class SettingsFragment : Fragment() {
         super.onDestroyView()
     }
 
+    private fun showSection(index: Int) {
+        val binding = _binding ?: return
+        binding.sectionGeneral.isVisible = index == 0
+        binding.sectionChats.isVisible = index == 1
+        binding.sectionPrivacy.isVisible = index == 2
+        binding.sectionAbout.isVisible = index == 3
+    }
+
     private fun renderSettings(settings: AppSettings) {
         rendering = true
         binding.textThemeValue.setText(
             when (settings.theme) {
-                ThemeMode.SYSTEM -> R.string.settings_theme_system
+                ThemeMode.SYSTEM -> R.string.settings_theme_system_short
                 ThemeMode.LIGHT -> R.string.settings_theme_light
                 ThemeMode.DARK -> R.string.settings_theme_dark
             }
         )
+        binding.textLanguageValue.setText(
+            when (settings.language) {
+                AppLanguage.SYSTEM -> R.string.settings_language_system_short
+                AppLanguage.ENGLISH -> R.string.settings_language_english
+                AppLanguage.PERSIAN -> R.string.settings_language_farsi
+            }
+        )
         binding.switchPreviews.isChecked = settings.notificationPreviews
+        binding.switchScreenSecurity.isChecked = settings.screenSecurity
         rendering = false
         renderNotificationStatus()
+    }
+
+    private fun showLanguageDialog() {
+        val languages = AppLanguage.entries
+        val labels = arrayOf(
+            getString(R.string.settings_language_system),
+            getString(R.string.settings_language_english),
+            getString(R.string.settings_language_farsi)
+        )
+        val current = languages.indexOf(container.settings.current.language).coerceAtLeast(0)
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.settings_language_dialog)
+            .setSingleChoiceItems(labels, current) { dialog, which ->
+                val language = languages.getOrElse(which) { AppLanguage.SYSTEM }
+                container.settings.setLanguage(language)
+                App.applyLanguage(language)
+                dialog.dismiss()
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
     }
 
     private fun showThemeDialog() {
@@ -112,18 +168,32 @@ class SettingsFragment : Fragment() {
                 val mode = modes.getOrElse(which) { ThemeMode.SYSTEM }
                 container.settings.setTheme(mode)
                 ThemeController.apply(mode)
-                Toast.makeText(requireContext(), R.string.settings_theme_updated, Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    requireContext(),
+                    R.string.settings_theme_updated,
+                    Toast.LENGTH_SHORT
+                ).show()
                 dialog.dismiss()
             }
             .setNegativeButton(R.string.cancel, null)
             .show()
     }
 
+    private fun applyScreenSecurityFlag(enabled: Boolean) {
+        val window = requireActivity().window
+        if (enabled) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        }
+    }
+
     private fun renderNotificationStatus() {
-        if (!isAdded) return
+        if (!isAdded || _binding == null) return
         val canPost = MessageNotifications.canPost(requireContext())
         binding.textNotificationStatus.setText(
-            if (canPost) R.string.settings_notification_on else R.string.settings_notification_off
+            if (canPost) R.string.settings_notification_on_short
+            else R.string.settings_notification_off_short
         )
         binding.buttonNotificationAction.setText(
             when {
@@ -196,7 +266,11 @@ class SettingsFragment : Fragment() {
             .setPositiveButton(R.string.settings_clear_all) { _, _ ->
                 viewLifecycleOwner.lifecycleScope.launch {
                     container.engine.clearAllConversations()
-                    Toast.makeText(requireContext(), R.string.settings_clear_all_done, Toast.LENGTH_SHORT).show()
+                    Toast.makeText(
+                        requireContext(),
+                        R.string.settings_clear_all_done,
+                        Toast.LENGTH_SHORT
+                    ).show()
                 }
             }
             .show()
@@ -213,8 +287,13 @@ class SettingsFragment : Fragment() {
                     MessageNotifications.dismissIncoming(requireContext())
                     container.settings.reset()
                     ConnectionService.stop(requireContext())
-                    Toast.makeText(requireContext(), R.string.settings_delete_all_done, Toast.LENGTH_LONG).show()
+                    Toast.makeText(
+                        requireContext(),
+                        R.string.settings_delete_all_done,
+                        Toast.LENGTH_LONG
+                    ).show()
                     ThemeController.apply(ThemeMode.SYSTEM)
+                    App.applyLanguage(AppLanguage.SYSTEM)
                 }
             }
             .show()

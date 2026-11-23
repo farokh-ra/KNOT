@@ -17,7 +17,7 @@ package dev.twoperson.messenger.net
  */
 object Wire {
 
-    const val VERSION = 4
+    const val VERSION = 5
 
     const val KIND_INITIATION = 1
     const val KIND_CONFIRMATION = 2

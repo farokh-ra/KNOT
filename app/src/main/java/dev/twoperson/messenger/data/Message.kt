@@ -33,8 +33,14 @@ data class Message(
      * calculated yet".
      */
     val transferDigest: Long = 0L,
-    val isRead: Boolean = true
-)
+    val isRead: Boolean = true,
+    /** Id of the message this one quotes, or null for a normal message. */
+    val replyToId: String? = null,
+    /** Short copy of the quoted message, so the quote survives a local delete. */
+    val replySnippet: String? = null
+) {
+    val isReply: Boolean get() = !replySnippet.isNullOrBlank()
+}
 
 /**
  * A locally saved contact. A contact owns one private conversation. Pairing remains strictly
@@ -127,6 +133,26 @@ object ContactNames {
             contact.note
         ).joinToString(" ").lowercase()
         return haystack.contains(needle.lowercase())
+    }
+}
+
+/**
+ * Quote text rules shared by the composer, the wire protocol and the bubble. Kept pure so the
+ * limits are unit tested without an Android device.
+ */
+object ReplyContent {
+
+    const val MAX_SNIPPET_CODE_POINTS = 160
+
+    /** Builds the one-line quote shown in a bubble and sent to the other device. */
+    fun snippet(body: String, isFile: Boolean = false, fileName: String? = null): String {
+        val source = if (isFile) fileName ?: body else body
+        val cleaned = source.trim().replace(Regex("\\s+"), " ")
+        if (cleaned.isEmpty()) return ""
+        val points = cleaned.codePointCount(0, cleaned.length)
+        if (points <= MAX_SNIPPET_CODE_POINTS) return cleaned
+        val end = cleaned.offsetByCodePoints(0, MAX_SNIPPET_CODE_POINTS)
+        return cleaned.substring(0, end).trimEnd() + "…"
     }
 }
 

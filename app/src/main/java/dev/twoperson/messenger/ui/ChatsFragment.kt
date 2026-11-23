@@ -52,9 +52,9 @@ class ChatsFragment : Fragment() {
         binding.listChats.layoutManager = LinearLayoutManager(requireContext())
         binding.listChats.adapter = adapter
 
-        binding.fabNewChat.setOnClickListener { createContact(join = false) }
-        binding.buttonEmptyNew.setOnClickListener { createContact(join = false) }
-        binding.buttonEmptyJoin.setOnClickListener { createContact(join = true) }
+        binding.fabNewChat.setOnClickListener { NewConversation.show(this) }
+        binding.buttonEmptyNew.setOnClickListener { NewConversation.show(this) }
+        binding.buttonEmptyJoin.setOnClickListener { NewConversation.show(this, join = true) }
         binding.cardActive.setOnClickListener { openActive() }
 
         viewLifecycleOwner.lifecycleScope.launch {
@@ -99,7 +99,8 @@ class ChatsFragment : Fragment() {
         val hasChats = chats.isNotEmpty()
         binding.listChats.isVisible = hasChats
         binding.emptyState.isVisible = !hasChats
-        binding.fabNewChat.isVisible = hasChats
+        // The create/join entry point is always on screen, even before the first contact.
+        binding.fabNewChat.isVisible = true
         adapter.submitList(chats)
         renderActive()
     }
@@ -146,30 +147,6 @@ class ChatsFragment : Fragment() {
             Intent(requireContext(), ContactDetailActivity::class.java)
                 .putExtra(ContactDetailActivity.EXTRA_CONTACT_ID, contact.id)
         )
-    }
-
-    private fun createContact(join: Boolean) {
-        if (!isAdded) return
-        ContactDialogs.show(
-            context = requireContext(),
-            title = R.string.chats_new_contact_title,
-            message = R.string.chats_new_contact_body,
-            positive = R.string.chats_new_contact_create
-        ) { name, note ->
-            viewLifecycleOwner.lifecycleScope.launch {
-                val contact = container.repository.addContact(name, note)
-                container.engine.selectContact(contact.id)
-                Toast.makeText(requireContext(), R.string.chats_new_contact_added, Toast.LENGTH_SHORT).show()
-                startActivity(
-                    Intent(requireContext(), PairingActivity::class.java)
-                        .putExtra(PairingActivity.EXTRA_CONTACT_ID, contact.id)
-                        .putExtra(
-                            PairingActivity.EXTRA_MODE,
-                            if (join) PairingActivity.MODE_JOIN else PairingActivity.MODE_CREATE
-                        )
-                )
-            }
-        }
     }
 
     private fun showMenu(anchor: View, contact: Contact) {

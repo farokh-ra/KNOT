@@ -17,12 +17,15 @@ import dev.twoperson.messenger.data.Message
 import dev.twoperson.messenger.data.MessageDirection
 import dev.twoperson.messenger.data.MessageKind
 import dev.twoperson.messenger.data.MessageState
+import dev.twoperson.messenger.data.ReplyContent
 import dev.twoperson.messenger.databinding.ItemMessageBinding
 import java.util.Locale
 
 class ChatAdapter(
+    private val peerName: () -> String,
     private val onFileClick: (Message) -> Unit,
-    private val onMessageLongClick: (Message) -> Unit
+    private val onMessageLongClick: (Message) -> Unit,
+    private val onReplyClick: (Message) -> Unit
 ) : ListAdapter<Message, ChatAdapter.Holder>(Diff) {
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder {
@@ -32,7 +35,17 @@ class ChatAdapter(
 
     override fun onBindViewHolder(holder: Holder, position: Int) {
         val previous = if (position > 0) getItem(position - 1) else null
-        holder.bind(getItem(position), previous, onFileClick, onMessageLongClick)
+        holder.bind(
+            message = getItem(position),
+            previous = previous,
+            quoted = getItem(position).replyToId?.let { id ->
+                currentList.firstOrNull { it.id == id }
+            },
+            peerName = peerName,
+            onFileClick = onFileClick,
+            onMessageLongClick = onMessageLongClick,
+            onReplyClick = onReplyClick
+        )
     }
 
     fun submit(messages: List<Message>, commitCallback: (() -> Unit)? = null) {
@@ -49,8 +62,11 @@ class ChatAdapter(
         fun bind(
             message: Message,
             previous: Message?,
+            quoted: Message?,
+            peerName: () -> String,
             onFileClick: (Message) -> Unit,
-            onMessageLongClick: (Message) -> Unit
+            onMessageLongClick: (Message) -> Unit,
+            onReplyClick: (Message) -> Unit
         ) {
             val context = binding.root.context
             val outgoing = message.direction == MessageDirection.OUTGOING
@@ -58,6 +74,7 @@ class ChatAdapter(
 
             bindDateHeader(context, message, previous)
             bindBubbleShape(context, message, previous)
+            bindReply(context, message, quoted, peerName, outgoing, onReplyClick)
 
             val contentColor = ContextCompat.getColor(
                 context,
@@ -66,14 +83,18 @@ class ChatAdapter(
             binding.bubbleCard.setCardBackgroundColor(
                 ContextCompat.getColor(context, if (outgoing) R.color.bubble_out else R.color.bubble_in)
             )
+            binding.bubbleCard.strokeColor = ContextCompat.getColor(
+                context,
+                if (outgoing) R.color.bubble_out else R.color.bubble_in_stroke
+            )
             binding.bubbleCard.alpha = if (outgoing && message.state == MessageState.FAILED) 0.78f else 1f
 
             binding.textBody.isVisible = !isFile
             binding.fileRow.isVisible = isFile
             binding.textBody.text = if (isFile) "" else message.body
             binding.textBody.setTextColor(contentColor)
-            // Long-press opens the message actions (copy, retry, delete). Text selection is
-            // intentionally off so the gesture is not swallowed by the TextView.
+            // Long-press opens the message actions (reply, copy, retry, delete). Text selection
+            // is intentionally off so the gesture is not swallowed by the TextView.
             binding.textBody.setTextIsSelectable(false)
 
             val percent = progressPercent(message)
@@ -105,11 +126,12 @@ class ChatAdapter(
                 message.fileSize > 0
 
             binding.textMeta.setTextColor(contentColor)
-            val time = UiTime.clock(context, message.createdAt)
-            binding.textMeta.text = if (outgoing) {
-                context.getString(R.string.message_meta_format, time, stateLabel(context, message.state))
-            } else {
-                time
+            binding.textMeta.text = UiTime.clock(context, message.createdAt)
+            binding.textTicks.isVisible = outgoing
+            if (outgoing) {
+                binding.textTicks.setTextColor(contentColor)
+                binding.textTicks.text = tickFor(message.state)
+                binding.textTicks.contentDescription = stateLabel(context, message.state)
             }
 
             val layoutParams = (binding.bubbleCard.layoutParams as FrameLayout.LayoutParams).apply {
@@ -130,6 +152,48 @@ class ChatAdapter(
             // tappable file bubbles while every bubble remains long-pressable.
             binding.bubbleCard.isClickable = isFile
             binding.bubbleCard.isLongClickable = true
+        }
+
+        private fun bindReply(
+            context: Context,
+            message: Message,
+            quoted: Message?,
+            peerName: () -> String,
+            outgoing: Boolean,
+            onReplyClick: (Message) -> Unit
+        ) {
+            val snippet = message.replySnippet?.takeIf { it.isNotBlank() }
+            binding.replyBlock.isVisible = snippet != null
+            if (snippet == null) {
+                binding.replyBlock.setOnClickListener(null)
+                return
+            }
+            val author = when (quoted?.direction) {
+                MessageDirection.OUTGOING -> context.getString(R.string.chat_reply_you)
+                MessageDirection.INCOMING -> peerName().ifBlank {
+                    context.getString(R.string.chat_reply_peer)
+                }
+
+                null -> context.getString(R.string.chat_reply_unknown)
+            }
+            val accent = ContextCompat.getColor(
+                context,
+                if (outgoing) R.color.bubble_out_text else R.color.brand_primary
+            )
+            binding.replyAccent.setBackgroundColor(accent)
+            binding.textReplyAuthor.text = author
+            binding.textReplyAuthor.setTextColor(accent)
+            binding.textReplySnippet.text = ReplyContent.snippet(snippet)
+            binding.textReplySnippet.setTextColor(
+                ContextCompat.getColor(
+                    context,
+                    if (outgoing) R.color.bubble_out_text else R.color.bubble_in_text
+                )
+            )
+            binding.textReplySnippet.alpha = 0.82f
+            binding.replyBlock.setOnClickListener {
+                quoted?.let(onReplyClick)
+            }
         }
 
         /**
@@ -156,6 +220,13 @@ class ChatAdapter(
             val show = previous == null || !UiTime.sameDay(previous.createdAt, message.createdAt)
             binding.textDateHeader.isVisible = show
             if (show) binding.textDateHeader.text = UiTime.dayLabel(context, message.createdAt)
+        }
+
+        private fun tickFor(state: MessageState): String = when (state) {
+            MessageState.PENDING -> "\u2026"
+            MessageState.SENT -> "\u2713"
+            MessageState.DELIVERED -> "\u2713\u2713"
+            MessageState.FAILED -> "!"
         }
 
         private fun sampleSpeed(message: Message, now: Long): Long {

@@ -1,11 +1,11 @@
-# Wire protocol (version 4)
+# Wire protocol (version 5)
 
 All peer packets share a 6-byte header:
 
 ```
-0..3  magic  "TPM" 0x03
+0..3  magic  "TPM" 0x05
 4     kind   1 = initiation, 2 = confirmation, 3 = data, 4 = ack, 5 = control
-5     version 0x03
+5     version 0x05
 ```
 
 Version 2 moved the reliable sequence number inside the encrypted DATA payload, so
@@ -13,6 +13,11 @@ acknowledgements and heartbeats no longer share the counter space with data fram
 keeps that framing and adds five application-level file transfer messages, a 16 KiB block
 size, a 4 TiB file bound and a wider reliable window for bulk data. It also raises the maximum
 application message to 64 KiB so one block plus its headers fits comfortably.
+
+Version 4 added the route hint. Version 5 keeps the same framing and adds one application
+message, `text_reply` (type 10), so a message can carry a quoted reply block. Because the
+version byte is inside the handshake MAC, a 1.2.x peer and a 1.3.x peer fail the handshake
+explicitly instead of silently dropping replies.
 
 Different major versions can never half-interoperate: the version byte is inside the handshake
 MAC, so a mismatch fails the handshake instead of producing a corrupted stream.
@@ -130,6 +135,8 @@ so a 16 KiB file block travels in about fifteen frames.
 hello       (1): type u8, version u16, device id 16 B, identity public key 32 B, name len u8, name
 text        (2): type u8, message id 16 B, sequence u64, created-at ms u64, body len u16, UTF-8 body
 ack         (3): type u8, message id 16 B
+text_reply (10): type u8, message id 16 B, sequence u64, created-at ms u64, body len u16, UTF-8 body,
+                 reply-to message id 16 B, snippet len u16, UTF-8 snippet (1..512 B)
 file_offer  (4): type u8, transfer id 16 B, message id 16 B, sequence u64, created-at ms u64,
                  total bytes u64, name len u8, UTF-8 name, mime len u8, UTF-8 mime
 file_data   (5): type u8, transfer id 16 B, offset u64, length u32, bytes (1..16384)
@@ -147,10 +154,13 @@ the sender should retry from zero.
 
 Validation rules enforced on decode (each returns "invalid" rather than coercing):
 
-- `hello.version` must equal 4 (the app rejects a peer that completed the handshake with a
+- `hello.version` must equal 5 (the app rejects a peer that completed the handshake with a
   different application version rather than guessing);
 - device id 16 bytes, public key 32 bytes, name ≤ 64 bytes;
 - text body must be valid UTF-8, non-empty, ≤ 8192 bytes and ≤ 2000 code points;
+- a reply block needs a 16-byte reply-to id and a valid UTF-8 snippet of 1..512 bytes; the
+  snippet is displayed as a quote and never used for routing, so a deleted original cannot
+  break delivery;
 - `created_at` must be between 2001-09-09 and 2100-01-01 (clock-abuse bound);
 - file `totalBytes` and `FileAck.receivedBytes` are 0..4 TiB;
 - a file name is 1..255 UTF-8 bytes after sanitization (control characters, `/`, `\` and
