@@ -45,7 +45,9 @@ object GifLoader {
         val animated = animatedDrawable(target.context, source)
         if (animated != null) {
             target.setImageDrawable(animated)
-            (animated as? AnimatedImageDrawable)?.start()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                (animated as? AnimatedImageDrawable)?.start()
+            }
             return
         }
         val request = ImageRequest.Builder(target.context)
