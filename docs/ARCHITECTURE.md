@@ -163,26 +163,35 @@ means that.
   is driven by the total unread count.
 - File progress updates mutate the already loaded row in place instead of re-querying the
   whole history several times per second.
-- Auto-scroll is armed only for a newly inserted **outgoing** message/file and targets the
-  expected outgoing count, so incoming traffic never pulls the reader away from older
-  messages. A floating down-arrow appears whenever the newest row is off-screen.
-- Long-pressing any bubble opens message actions: copy text, retry a failed send, delete, and
-  for completed files open/share/save to `Downloads/Knot`. The screen is kept awake only while
-  a file transfer is pending.
+- Chat scrolling follows Telegram rules: the list sticks to the bottom while the reader is
+  there, incoming messages never pull the list while the reader is scrolled up, and a message
+  the user sends always returns to the latest row. A floating down-arrow appears whenever the
+  newest row is off-screen, and the composer tracks the IME inset.
+- Replies are quoted locally and on the wire. The quote snippet is sanitized to a single line
+  and 160 code points, sent as `text_reply`, and rendered as a tappable block; the tap scrolls
+  back to the original message when it still exists.
+- Long-pressing any bubble opens message actions: reply, copy text, go to the quoted message,
+  retry a failed send, delete, and for completed files open/share/save to `Downloads/Knot`.
+  Swiping a bubble to the right also starts a reply. The screen is kept awake only while a
+  file transfer is pending.
+- Settings are split into four compact tabs (General, Chats, Privacy, About). Language is
+  stored per app through AppCompat locales; screen security applies `FLAG_SECURE` to every
+  Knot screen and pairing always sets it regardless of the setting.
 - Date chips are derived from message timestamps; each bubble uses Material 3 surfaces with a
   tighter corner on the sender side and a ripple only on tappable file bubbles. Active
   transfers show the measured rate next to the percentage.
 
 ## Storage
 
-SQLite (`twoperson.db`, version 4):
+SQLite (`twoperson.db`, version 5):
 
 - `contacts(id TEXT PRIMARY KEY, label, note, device_id, public_key, display_name, paired_at,
   created_at, last_opened_at, has_invitation)` — local address book, per-contact pinned
   identity and invitation state. `label` and `note` never leave the device.
 - `messages(id TEXT PRIMARY KEY, contact_id, direction, body, created_at, seq, state, sender_id,
   kind, file_name, mime_type, file_size, file_uri, file_path, transfer_id, received_bytes,
-  transfer_digest, is_read)` — text and file rows, progress, read state and transfer identity
+  transfer_digest, is_read, reply_to_id, reply_snippet)` — text and file rows, progress, read
+  state, transfer identity and the optional quoted-reply block
 - `meta(key, value)` — the active contact ID and per-contact outgoing sequence counters. The
   version-4 migration turns a single-peer installation into the `primary` contact and assigns
   its existing messages to that contact.

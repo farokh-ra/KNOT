@@ -3,6 +3,7 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:background="@color/chat_background"
     android:orientation="vertical">
 
     <com.google.android.material.appbar.MaterialToolbar
@@ -11,6 +12,7 @@
         android:layout_height="?attr/actionBarSize"
         android:background="@color/surface_background"
         android:elevation="1dp"
+        app:navigationContentDescription="@string/chat_back"
         app:title="@string/chat_title"
         app:titleTextAppearance="@style/TextAppearance.App.Title" />
 
@@ -43,7 +45,8 @@
             android:layout_height="match_parent"
             android:clipToPadding="false"
             android:paddingTop="8dp"
-            android:paddingBottom="12dp" />
+            android:paddingBottom="12dp"
+            android:scrollbars="none" />
 
         <TextView
             android:id="@+id/textEmpty"
@@ -51,7 +54,9 @@
             android:layout_height="wrap_content"
             android:layout_gravity="center"
             android:layout_marginHorizontal="40dp"
+            android:background="@drawable/bg_empty_chat"
             android:gravity="center"
+            android:padding="18dp"
             android:text="@string/chat_empty"
             android:textAppearance="?attr/textAppearanceBodyMedium"
             android:textColor="?android:attr/textColorSecondary" />
@@ -72,11 +77,66 @@
     </FrameLayout>
 
     <LinearLayout
+        android:id="@+id/replyBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/surface_card"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="12dp"
+        android:paddingEnd="4dp"
+        android:paddingVertical="6dp"
+        android:visibility="gone">
+
+        <View
+            android:layout_width="3dp"
+            android:layout_height="36dp"
+            android:background="@drawable/bg_reply_accent" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="10dp"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/textReplyAuthor"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:textAppearance="?attr/textAppearanceLabelMedium"
+                android:textColor="@color/brand_primary"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/textReplySnippet"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:textAppearance="?attr/textAppearanceBodySmall"
+                android:textColor="?android:attr/textColorSecondary" />
+        </LinearLayout>
+
+        <androidx.appcompat.widget.AppCompatImageButton
+            android:id="@+id/buttonCancelReply"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/chat_cancel_reply"
+            android:padding="12dp"
+            android:src="@drawable/ic_close"
+            app:tint="?android:attr/textColorSecondary" />
+    </LinearLayout>
+
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:background="?attr/colorSurface"
         android:elevation="8dp"
-        android:gravity="center_vertical"
+        android:gravity="bottom"
         android:orientation="horizontal"
         android:paddingHorizontal="8dp"
         android:paddingTop="6dp"
@@ -90,16 +150,23 @@
             android:contentDescription="@string/chat_attach"
             android:padding="12dp"
             android:src="@drawable/ic_attach"
-            app:tint="@color/brand_primary" />
+            app:tint="?android:attr/textColorSecondary" />
 
         <com.google.android.material.textfield.TextInputLayout
             android:id="@+id/inputMessageLayout"
-            style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+            style="@style/Widget.Material3.TextInputLayout.FilledBox"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_marginStart="2dp"
             android:layout_weight="1"
-            android:hint="@string/chat_input_hint">
+            android:hint="@string/chat_input_hint"
+            app:boxBackgroundColor="@color/chat_input_background"
+            app:boxCornerRadiusBottomEnd="24dp"
+            app:boxCornerRadiusBottomStart="24dp"
+            app:boxCornerRadiusTopEnd="24dp"
+            app:boxCornerRadiusTopStart="24dp"
+            app:boxStrokeWidth="0dp"
+            app:boxStrokeWidthFocused="0dp">
 
             <com.google.android.material.textfield.TextInputEditText
                 android:id="@+id/inputMessage"
@@ -108,20 +175,19 @@
                 android:imeOptions="actionSend"
                 android:inputType="textCapSentences|textMultiLine"
                 android:maxLength="2000"
-                android:maxLines="5" />
+                android:maxLines="5"
+                android:paddingTop="12dp"
+                android:paddingBottom="12dp" />
         </com.google.android.material.textfield.TextInputLayout>
 
-        <com.google.android.material.button.MaterialButton
+        <com.google.android.material.floatingactionbutton.FloatingActionButton
             android:id="@+id/buttonSend"
-            android:layout_width="52dp"
-            android:layout_height="52dp"
-            android:layout_marginStart="6dp"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
             android:contentDescription="@string/chat_send"
-            android:insetTop="0dp"
-            android:insetBottom="0dp"
-            app:icon="@drawable/ic_send"
-            app:iconGravity="textStart"
-            app:iconPadding="0dp"
-            app:iconSize="22dp" />
+            app:fabCustomSize="52dp"
+            app:maxImageSize="22dp"
+            app:srcCompat="@drawable/ic_send" />
     </LinearLayout>
 </LinearLayout>

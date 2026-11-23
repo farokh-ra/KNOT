@@ -29,6 +29,44 @@ class AppCodecTest {
     }
 
     @Test
+    fun textReplyRoundTrips() {
+        val reply = AppMessage.TextReply(
+            messageId = Crypto.randomBytes(16),
+            sequence = 9,
+            createdAt = 1_700_000_000_000,
+            body = "پاسخ به پیام قبلی",
+            replyToId = Crypto.randomBytes(16),
+            replySnippet = "the quoted message"
+        )
+        assertEquals(reply, AppCodec.decode(AppCodec.encode(reply)))
+    }
+
+    @Test
+    fun rejectsEmptyReplySnippet() {
+        val reply = AppMessage.TextReply(
+            Crypto.randomBytes(16), 1, 1_700_000_000_000, "hi", Crypto.randomBytes(16), ""
+        )
+        try {
+            AppCodec.encode(reply)
+            throw AssertionError("empty snippet must not encode")
+        } catch (expected: IllegalArgumentException) {
+            // Expected.
+        }
+    }
+
+    @Test
+    fun rejectsTruncatedTextReply() {
+        val reply = AppMessage.TextReply(
+            Crypto.randomBytes(16), 1, 1_700_000_000_000, "hello",
+            Crypto.randomBytes(16), "quoted"
+        )
+        val encoded = AppCodec.encode(reply)
+        for (cut in 1..12) {
+            assertNull(AppCodec.decode(encoded.copyOfRange(0, encoded.size - cut)))
+        }
+    }
+
+    @Test
     fun ackRoundTrips() {
         val ack = AppMessage.Ack(Crypto.randomBytes(16))
         assertEquals(ack, AppCodec.decode(AppCodec.encode(ack)))

@@ -11,6 +11,7 @@ import dev.twoperson.messenger.crypto.Invite
 import dev.twoperson.messenger.data.Message
 import dev.twoperson.messenger.data.MessageRepository
 import dev.twoperson.messenger.data.MessageState
+import dev.twoperson.messenger.data.ReplyContent
 import dev.twoperson.messenger.data.SecureStore
 import dev.twoperson.messenger.data.SettingsStore
 import dev.twoperson.messenger.net.Handshake
@@ -441,17 +442,33 @@ class ConnectionEngine(
      * Stores the message locally first, then tries to send it. Returns false only when the
      * text itself is unacceptable; being offline is not a failure, it stays queued.
      */
-    suspend fun sendText(raw: String): Boolean {
+    suspend fun sendText(
+        raw: String,
+        replyToId: String? = null,
+        replySnippet: String? = null
+    ): Boolean {
         val body = raw.trim()
         if (body.isEmpty()) return false
         if (body.codePointCount(0, body.length) > Protocol.MAX_TEXT_CODE_POINTS) return false
         val contact = repository.activeContact.value ?: return false
         if (!contact.hasInvitation) return false
 
+        val quoted = replySnippet?.let { ReplyContent.snippet(it) }
+            ?.takeIf { it.isNotEmpty() }
+        val quotedId = replyToId?.takeIf {
+            quoted != null && Hex.decode(it)?.size == Protocol.MESSAGE_ID_BYTES
+        }
+
         val id = Hex.encode(Crypto.randomBytes(Protocol.MESSAGE_ID_BYTES))
         val sequence = repository.nextSequence(contact.id)
         val message = repository.insertOutgoing(
-            contact.id, id, body, System.currentTimeMillis(), sequence
+            contactId = contact.id,
+            id = id,
+            body = body,
+            createdAt = System.currentTimeMillis(),
+            sequence = sequence,
+            replyToId = quotedId,
+            replySnippet = quoted
         )
         repository.refresh()
 
@@ -877,6 +894,25 @@ class ConnectionEngine(
                 }
             }
 
+            is AppMessage.TextReply -> {
+                val id = Hex.encode(message.messageId)
+                val sender = repository.contact(contactId)?.deviceId ?: "peer"
+                val stored = repository.insertIncoming(
+                    contactId = contactId,
+                    id = id,
+                    body = message.body,
+                    createdAt = message.createdAt,
+                    sequence = message.sequence,
+                    senderId = sender,
+                    replyToId = Hex.encode(message.replyToId),
+                    replySnippet = message.replySnippet
+                )
+                (link ?: activeLink)?.sendApplicationMessage(AppMessage.Ack(message.messageId))
+                if (stored) {
+                    repository.messageById(id)?.let { onIncomingMessage(it) }
+                }
+            }
+
             is AppMessage.Ack -> {
                 repository.setState(Hex.encode(message.messageId), MessageState.DELIVERED)
             }
@@ -976,7 +1012,22 @@ class ConnectionEngine(
 
     private fun deliver(link: PeerLink, message: Message): Boolean {
         val idBytes = Hex.decode(message.id) ?: return true
-        val payload = AppMessage.Text(idBytes, message.sequence, message.createdAt, message.body)
+        val replyId = message.replyToId?.let { Hex.decode(it) }
+        val snippet = message.replySnippet
+        val payload = if (replyId != null && replyId.size == Protocol.MESSAGE_ID_BYTES &&
+            !snippet.isNullOrBlank()
+        ) {
+            AppMessage.TextReply(
+                idBytes,
+                message.sequence,
+                message.createdAt,
+                message.body,
+                replyId,
+                ReplyContent.snippet(snippet)
+            )
+        } else {
+            AppMessage.Text(idBytes, message.sequence, message.createdAt, message.body)
+        }
         return link.sendApplicationMessage(payload) {
             scope.launch { repository.setState(message.id, MessageState.SENT) }
         }

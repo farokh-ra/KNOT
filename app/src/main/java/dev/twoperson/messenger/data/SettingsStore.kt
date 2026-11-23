@@ -7,6 +7,20 @@ import kotlinx.coroutines.flow.asStateFlow
 import java.net.InetAddress
 import java.net.InetSocketAddress
 
+/** App language. SYSTEM follows the device; ENGLISH and PERSIAN override it per app. */
+enum class AppLanguage(val storedValue: String, val languageTag: String?) {
+    SYSTEM("system", null),
+    ENGLISH("en", "en"),
+    PERSIAN("fa", "fa");
+
+    companion object {
+        fun fromStored(value: String?): AppLanguage {
+            val normalized = value?.trim()?.lowercase()
+            return entries.firstOrNull { it.storedValue == normalized } ?: SYSTEM
+        }
+    }
+}
+
 /** How the app chooses between the light and dark Material 3 palettes. */
 enum class ThemeMode(val storedValue: String) {
     SYSTEM("system"),
@@ -50,7 +64,10 @@ internal object EndpointCodec {
 data class AppSettings(
     val theme: ThemeMode = ThemeMode.SYSTEM,
     /** Show the sender name and message text on message notifications. */
-    val notificationPreviews: Boolean = true
+    val notificationPreviews: Boolean = true,
+    val language: AppLanguage = AppLanguage.SYSTEM,
+    /** Blocks screenshots and the recent-apps thumbnail on every Knot screen. */
+    val screenSecurity: Boolean = false
 )
 
 /** Pure settings policy, separated from SharedPreferences so it can be unit tested. */
@@ -98,6 +115,16 @@ class SettingsStore(context: Context) {
         _settings.value = _settings.value.copy(notificationPreviews = enabled)
     }
 
+    fun setLanguage(language: AppLanguage) {
+        prefs.edit().putString(KEY_LANGUAGE, language.storedValue).apply()
+        _settings.value = _settings.value.copy(language = language)
+    }
+
+    fun setScreenSecurity(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_SCREEN_SECURITY, enabled).apply()
+        _settings.value = _settings.value.copy(screenSecurity = enabled)
+    }
+
     /**
      * Last endpoint that carried authenticated traffic for [contactId]. Keeping it across
      * restarts lets the engine redial immediately while discovery runs in parallel.
@@ -136,13 +163,17 @@ class SettingsStore(context: Context) {
 
     private fun read(): AppSettings = AppSettings(
         theme = ThemeMode.fromStored(prefs.getString(KEY_THEME, null)),
-        notificationPreviews = prefs.getBoolean(KEY_PREVIEWS, true)
+        notificationPreviews = prefs.getBoolean(KEY_PREVIEWS, true),
+        language = AppLanguage.fromStored(prefs.getString(KEY_LANGUAGE, null)),
+        screenSecurity = prefs.getBoolean(KEY_SCREEN_SECURITY, false)
     )
 
     companion object {
         private const val PREFS = "app_settings"
         private const val KEY_THEME = "theme"
         private const val KEY_PREVIEWS = "notification_previews"
+        private const val KEY_LANGUAGE = "language"
+        private const val KEY_SCREEN_SECURITY = "screen_security"
         private const val KEY_LAST_ENDPOINT_PREFIX = "last_endpoint_"
 
         /** Reads the theme before the first activity is created. */
@@ -150,6 +181,12 @@ class SettingsStore(context: Context) {
             context.applicationContext
                 .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                 .getString(KEY_THEME, null)
+        )
+
+        fun storedLanguage(context: Context): AppLanguage = AppLanguage.fromStored(
+            context.applicationContext
+                .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .getString(KEY_LANGUAGE, null)
         )
     }
 }

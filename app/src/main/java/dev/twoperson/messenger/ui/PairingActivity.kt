@@ -2,11 +2,14 @@ package dev.twoperson.messenger.ui
 
 import android.Manifest
 import android.content.ClipData
+import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.view.View
+import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
@@ -58,6 +61,9 @@ class PairingActivity : KnotActivity() {
             return
         }
         mode = intent?.getStringExtra(EXTRA_MODE) ?: MODE_CREATE
+        // The QR code and the invitation code are secrets. Never let them reach screenshots,
+        // screen recording or the recent-apps thumbnail.
+        window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
 
         binding = ActivityPairingBinding.inflate(layoutInflater)
         setContentView(binding.root)
@@ -125,6 +131,12 @@ class PairingActivity : KnotActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        // A security-off setting in Settings must not un-protect the invitation screen.
+        window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+    }
+
     override fun onSupportNavigateUp(): Boolean {
         finish()
         return true
@@ -186,8 +198,29 @@ class PairingActivity : KnotActivity() {
 
     private fun copyCode(code: String) {
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return
-        clipboard.setPrimaryClip(ClipData.newPlainText(getString(R.string.pairing_section_show), code))
+        val clip = ClipData.newPlainText(getString(R.string.pairing_section_show), code)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            // Android 13+ hides sensitive clips from the clipboard preview.
+            clip.description.extras = android.os.PersistableBundle().apply {
+                putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true)
+            }
+        }
+        clipboard.setPrimaryClip(clip)
         Toast.makeText(this, R.string.pairing_copied, Toast.LENGTH_SHORT).show()
+        // Do not leave the invitation on the clipboard for the rest of the day.
+        lifecycleScope.launch {
+            kotlinx.coroutines.delay(CLIPBOARD_CLEAR_MS)
+            val current = clipboard.primaryClip
+            val text = current?.takeIf { it.itemCount > 0 }
+                ?.getItemAt(0)?.coerceToText(this@PairingActivity)?.toString()
+            if (text != code) return@launch
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                clipboard.clearPrimaryClip()
+            } else {
+                // API 26-27 have no clearPrimaryClip; replacing the clip is the only option.
+                clipboard.setPrimaryClip(ClipData.newPlainText("", ""))
+            }
+        }
     }
 
     private fun showStatus(text: String, error: Boolean) {
@@ -204,6 +237,7 @@ class PairingActivity : KnotActivity() {
         const val EXTRA_CONTACT_ID = "contact_id"
         const val MODE_CREATE = "create"
         const val MODE_JOIN = "join"
-        const val MODE_SHOW = "show"
+        const         val MODE_SHOW = "show"
+        private const val CLIPBOARD_CLEAR_MS = 120_000L
     }
 }

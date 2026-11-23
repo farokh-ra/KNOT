@@ -13,7 +13,7 @@ import java.nio.charset.StandardCharsets
 object Protocol {
 
     /** Must match [dev.twoperson.messenger.net.Wire.VERSION]; a mismatch is rejected in Hello. */
-    const val WIRE_VERSION = 4
+    const val WIRE_VERSION = 5
 
     const val TYPE_HELLO: Int = 1
     const val TYPE_TEXT: Int = 2
@@ -33,6 +33,9 @@ object Protocol {
      */
     const val TYPE_ROUTE_HINT: Int = 9
 
+    /** Text plus a quoted reply block. Added in wire version 5. */
+    const val TYPE_TEXT_REPLY: Int = 10
+
     const val ROUTE_LAN: Int = 1
     const val ROUTE_UDP_TRACKER: Int = 2
     const val ROUTE_DHT: Int = 3
@@ -49,6 +52,7 @@ object Protocol {
 
     const val MAX_TEXT_CODE_POINTS = 2000
     const val MAX_TEXT_BYTES = 8 * 1024
+    const val MAX_REPLY_SNIPPET_BYTES = 512
     const val MAX_NAME_BYTES = 64
     const val MAX_FILE_NAME_BYTES = 255
     const val MAX_MIME_BYTES = 128
@@ -95,6 +99,29 @@ sealed interface AppMessage {
 
         override fun hashCode(): Int = 31 * (31 * (31 * messageId.contentHashCode() + sequence.toInt()) +
             createdAt.hashCode()) + body.hashCode()
+    }
+
+    /**
+     * A text message that quotes another message. The quoted text is a short, sanitized copy,
+     * so the bubble still renders when the original was deleted on one side.
+     */
+    data class TextReply(
+        val messageId: ByteArray,
+        val sequence: Long,
+        val createdAt: Long,
+        val body: String,
+        val replyToId: ByteArray,
+        val replySnippet: String
+    ) : AppMessage {
+        override fun equals(other: Any?): Boolean = this === other ||
+            (other is TextReply && messageId.contentEquals(other.messageId) &&
+                sequence == other.sequence && createdAt == other.createdAt &&
+                body == other.body && replyToId.contentEquals(other.replyToId) &&
+                replySnippet == other.replySnippet)
+
+        override fun hashCode(): Int = 31 * (31 * (31 * (31 * messageId.contentHashCode() +
+            sequence.toInt()) + createdAt.hashCode()) + body.hashCode()) +
+            replyToId.contentHashCode() + replySnippet.hashCode()
     }
 
     data class Ack(val messageId: ByteArray) : AppMessage {
@@ -230,6 +257,31 @@ object AppCodec {
                 .array()
         }
 
+        is AppMessage.TextReply -> {
+            val body = message.body.toByteArray(StandardCharsets.UTF_8)
+            val snippet = message.replySnippet.toByteArray(StandardCharsets.UTF_8)
+            require(body.size <= Protocol.MAX_TEXT_BYTES) { "text too long" }
+            require(message.messageId.size == Protocol.MESSAGE_ID_BYTES) { "bad message id" }
+            require(message.replyToId.size == Protocol.MESSAGE_ID_BYTES) { "bad reply id" }
+            require(snippet.isNotEmpty() && snippet.size <= Protocol.MAX_REPLY_SNIPPET_BYTES) {
+                "bad reply snippet"
+            }
+            ByteBuffer.allocate(
+                1 + Protocol.MESSAGE_ID_BYTES + 8 + 8 + 2 + body.size +
+                    Protocol.MESSAGE_ID_BYTES + 2 + snippet.size
+            )
+                .put(Protocol.TYPE_TEXT_REPLY.toByte())
+                .put(message.messageId)
+                .putLong(message.sequence)
+                .putLong(message.createdAt)
+                .putShort(body.size.toShort())
+                .put(body)
+                .put(message.replyToId)
+                .putShort(snippet.size.toShort())
+                .put(snippet)
+                .array()
+        }
+
         is AppMessage.Ack -> {
             require(message.messageId.size == Protocol.MESSAGE_ID_BYTES) { "bad message id" }
             ByteBuffer.allocate(1 + Protocol.MESSAGE_ID_BYTES)
@@ -330,6 +382,7 @@ object AppCodec {
             when (buffer.get().toInt() and 0xFF) {
                 Protocol.TYPE_HELLO -> decodeHello(buffer)
                 Protocol.TYPE_TEXT -> decodeText(buffer)
+                Protocol.TYPE_TEXT_REPLY -> decodeTextReply(buffer)
                 Protocol.TYPE_ACK -> decodeAck(buffer)
                 Protocol.TYPE_FILE_OFFER -> decodeFileOffer(buffer)
                 Protocol.TYPE_FILE_DATA -> decodeFileData(buffer)
@@ -380,6 +433,37 @@ object AppCodec {
         val codePoints = body.codePointCount(0, body.length)
         if (codePoints > Protocol.MAX_TEXT_CODE_POINTS) return null
         return AppMessage.Text(messageId, sequence, createdAt, body)
+    }
+
+    private fun decodeTextReply(buffer: ByteBuffer): AppMessage.TextReply? {
+        if (buffer.remaining() < Protocol.MESSAGE_ID_BYTES + 8 + 8 + 2 +
+            Protocol.MESSAGE_ID_BYTES + 2
+        ) {
+            return null
+        }
+        val messageId = ByteArray(Protocol.MESSAGE_ID_BYTES).also { buffer.get(it) }
+        val sequence = buffer.long
+        val createdAt = buffer.long
+        val bodyLength = buffer.short.toInt() and 0xFFFF
+        if (bodyLength > Protocol.MAX_TEXT_BYTES ||
+            buffer.remaining() < bodyLength + Protocol.MESSAGE_ID_BYTES + 2
+        ) {
+            return null
+        }
+        val bodyBytes = ByteArray(bodyLength).also { buffer.get(it) }
+        val replyToId = ByteArray(Protocol.MESSAGE_ID_BYTES).also { buffer.get(it) }
+        val snippetLength = buffer.short.toInt() and 0xFFFF
+        if (snippetLength > Protocol.MAX_REPLY_SNIPPET_BYTES) return null
+        if (buffer.remaining() != snippetLength) return null
+        if (sequence < 0) return null
+        if (createdAt < Protocol.MIN_TIMESTAMP_MS || createdAt > Protocol.MAX_TIMESTAMP_MS) return null
+        val body = decodeUtf8(bodyBytes) ?: return null
+        if (body.isEmpty()) return null
+        if (body.codePointCount(0, body.length) > Protocol.MAX_TEXT_CODE_POINTS) return null
+        val snippetBytes = ByteArray(snippetLength).also { buffer.get(it) }
+        val snippet = decodeUtf8(snippetBytes) ?: return null
+        if (snippet.isEmpty()) return null
+        return AppMessage.TextReply(messageId, sequence, createdAt, body, replyToId, snippet)
     }
 
     private fun decodeAck(buffer: ByteBuffer): AppMessage.Ack? {

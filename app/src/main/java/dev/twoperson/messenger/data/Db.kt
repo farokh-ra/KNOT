@@ -32,7 +32,9 @@ class Db(context: Context) : SQLiteOpenHelper(context.applicationContext, NAME, 
                 transfer_id TEXT,
                 received_bytes INTEGER NOT NULL DEFAULT 0,
                 transfer_digest INTEGER NOT NULL DEFAULT 0,
-                is_read INTEGER NOT NULL DEFAULT 1
+                is_read INTEGER NOT NULL DEFAULT 1,
+                reply_to_id TEXT,
+                reply_snippet TEXT
             )
             """.trimIndent()
         )
@@ -55,6 +57,10 @@ class Db(context: Context) : SQLiteOpenHelper(context.applicationContext, NAME, 
         }
         if (oldVersion < 3) {
             db.execSQL("ALTER TABLE messages ADD COLUMN transfer_digest INTEGER NOT NULL DEFAULT 0")
+        }
+        if (oldVersion < 5) {
+            db.execSQL("ALTER TABLE messages ADD COLUMN reply_to_id TEXT")
+            db.execSQL("ALTER TABLE messages ADD COLUMN reply_snippet TEXT")
         }
         if (oldVersion < 4) {
             db.execSQL(CREATE_CONTACTS)
@@ -120,7 +126,7 @@ class Db(context: Context) : SQLiteOpenHelper(context.applicationContext, NAME, 
 
     companion object {
         private const val NAME = "twoperson.db"
-        private const val VERSION = 4
+        private const val VERSION = 5
         const val LEGACY_CONTACT_ID = "primary"
         const val KEY_ACTIVE_CONTACT = "active_contact"
 

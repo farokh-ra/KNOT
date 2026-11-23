@@ -49,8 +49,8 @@ class ContactsFragment : Fragment() {
         binding.listContacts.layoutManager = LinearLayoutManager(requireContext())
         binding.listContacts.adapter = adapter
 
-        binding.fabAddContact.setOnClickListener { addContact() }
-        binding.buttonEmptyAdd.setOnClickListener { addContact() }
+        binding.fabAddContact.setOnClickListener { NewConversation.show(this) }
+        binding.buttonEmptyAdd.setOnClickListener { NewConversation.show(this) }
         binding.inputSearch.doAfterTextChanged { render() }
 
         viewLifecycleOwner.lifecycleScope.launch {
@@ -120,22 +120,6 @@ class ContactsFragment : Fragment() {
                     filtered.size,
                     filtered.size
                 )
-            }
-        }
-    }
-
-    private fun addContact() {
-        if (!isAdded) return
-        ContactDialogs.show(
-            context = requireContext(),
-            title = R.string.contacts_add_title,
-            message = R.string.contacts_add_body,
-            positive = R.string.contacts_add
-        ) { name, note ->
-            viewLifecycleOwner.lifecycleScope.launch {
-                val contact = container.repository.addContact(name, note)
-                Toast.makeText(requireContext(), R.string.contacts_added, Toast.LENGTH_SHORT).show()
-                openDetail(contact)
             }
         }
     }
