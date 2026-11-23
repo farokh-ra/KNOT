@@ -1,0 +1,192 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="560" viewBox="0 0 1600 560" role="img" aria-label="Knot — Two devices. One private thread. Direct, end-to-end encrypted messaging for Android. No account, no server, no relay, no analytics.">
+  <title>Knot — two devices, one private thread</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#03080b"/>
+      <stop offset="0.45" stop-color="#051014"/>
+      <stop offset="1" stop-color="#04181a"/>
+    </linearGradient>
+
+    <radialGradient id="artGlow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#14b8a6" stop-opacity="0.30"/>
+      <stop offset="0.45" stop-color="#0d9488" stop-opacity="0.12"/>
+      <stop offset="1" stop-color="#0d9488" stop-opacity="0"/>
+    </radialGradient>
+
+    <radialGradient id="leftGlow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#0ea5e9" stop-opacity="0.10"/>
+      <stop offset="1" stop-color="#0ea5e9" stop-opacity="0"/>
+    </radialGradient>
+
+    <linearGradient id="title" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#cbd5e1"/>
+    </linearGradient>
+
+    <linearGradient id="teal" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#99f6e4"/>
+      <stop offset="0.5" stop-color="#2dd4bf"/>
+      <stop offset="1" stop-color="#0d9488"/>
+    </linearGradient>
+
+    <linearGradient id="tealText" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#5eead4"/>
+      <stop offset="1" stop-color="#14b8a6"/>
+    </linearGradient>
+
+    <linearGradient id="ringWhite" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#cbd5e1"/>
+    </linearGradient>
+
+    <linearGradient id="ringTeal" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#99f6e4"/>
+      <stop offset="0.55" stop-color="#2dd4bf"/>
+      <stop offset="1" stop-color="#0d9488"/>
+    </linearGradient>
+
+    <radialGradient id="fade" cx="0.52" cy="0.48" r="0.72">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.9"/>
+      <stop offset="0.72" stop-color="#ffffff" stop-opacity="0.25"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+
+    <pattern id="dots" width="30" height="30" patternUnits="userSpaceOnUse">
+      <circle cx="1.5" cy="1.5" r="1.1" fill="#2dd4bf" fill-opacity="0.22"/>
+    </pattern>
+
+    <mask id="dotMask">
+      <rect width="1600" height="560" fill="url(#fade)"/>
+    </mask>
+
+    <filter id="glowSoft" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="16"/>
+    </filter>
+
+    <filter id="glowTight" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="5"/>
+    </filter>
+
+    <filter id="pipeGlow" x="-35%" y="-35%" width="170%" height="170%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="7" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- backdrop -->
+  <rect width="1600" height="560" fill="url(#bg)"/>
+  <rect width="1600" height="560" fill="url(#leftGlow)"/>
+  <ellipse cx="1230" cy="280" rx="470" ry="360" fill="url(#artGlow)"/>
+  <rect width="1600" height="560" fill="url(#dots)" mask="url(#dotMask)"/>
+
+  <!-- faint corner mesh -->
+  <g fill="none" stroke="#5eead4" stroke-opacity="0.10" stroke-width="1">
+    <path d="M1600 -10 L1508 44 L1518 150 L1600 196"/>
+    <path d="M1380 -10 L1462 58 L1508 44 M1462 58 L1518 150 M1518 150 L1465 236 L1600 300 M1465 236 L1380 -10"/>
+    <path d="M1560 560 L1500 500 L1530 426 L1600 396 M1500 500 L1430 505"/>
+    <path d="M0 70 L54 96 L38 160 L0 172 M54 96 L84 40"/>
+  </g>
+  <g fill="#5eead4" fill-opacity="0.35">
+    <circle cx="1462" cy="58" r="2"/>
+    <circle cx="1518" cy="150" r="2"/>
+    <circle cx="1465" cy="236" r="2"/>
+    <circle cx="54" cy="96" r="2"/>
+    <circle cx="1500" cy="500" r="2"/>
+  </g>
+
+  <!-- left column -->
+  <g font-family="Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif">
+    <g>
+      <circle cx="103" cy="84" r="3.5" fill="#2dd4bf"/>
+      <circle cx="103" cy="84" r="7" fill="#2dd4bf" fill-opacity="0.35" filter="url(#glowTight)"/>
+      <text x="120" y="89" font-size="13" font-weight="600" letter-spacing="3.6" fill="#5eead4" fill-opacity="0.9">PRIVATE MESSENGER FOR ANDROID</text>
+    </g>
+
+    <text x="92" y="256" font-size="156" font-weight="800" letter-spacing="-3" fill="url(#title)">Knot<tspan fill="url(#tealText)">.</tspan></text>
+
+    <text x="96" y="334" font-size="37" font-weight="600" letter-spacing="-0.4" fill="#e2e8f0">Two devices. <tspan fill="url(#tealText)">One private thread.</tspan></text>
+
+    <text x="97" y="386" font-size="21" font-weight="400" fill="#a3b3c6">Direct, end-to-end encrypted messaging for Android.</text>
+    <text x="97" y="416" font-size="21" font-weight="400" fill="#a3b3c6">Your phone talks straight to their phone. Nothing in between.</text>
+
+    <!-- feature chips -->
+    <g font-size="14" font-weight="600" letter-spacing="1.8" text-anchor="middle">
+      <g>
+        <rect x="96" y="452" width="146" height="42" rx="21" fill="#0d9488" fill-opacity="0.10" stroke="#2dd4bf" stroke-opacity="0.32"/>
+        <text x="169" y="478" fill="#5eead4">NO ACCOUNT</text>
+      </g>
+      <g>
+        <rect x="254" y="452" width="138" height="42" rx="21" fill="#0d9488" fill-opacity="0.10" stroke="#2dd4bf" stroke-opacity="0.32"/>
+        <text x="323" y="478" fill="#5eead4">NO SERVER</text>
+      </g>
+      <g>
+        <rect x="404" y="452" width="122" height="42" rx="21" fill="#0d9488" fill-opacity="0.10" stroke="#2dd4bf" stroke-opacity="0.32"/>
+        <text x="465" y="478" fill="#5eead4">NO RELAY</text>
+      </g>
+      <g>
+        <rect x="538" y="452" width="158" height="42" rx="21" fill="#0d9488" fill-opacity="0.10" stroke="#2dd4bf" stroke-opacity="0.32"/>
+        <text x="617" y="478" fill="#5eead4">NO ANALYTICS</text>
+      </g>
+    </g>
+
+    <text x="97" y="532" font-size="14" font-weight="500" letter-spacing="0.4" fill="#64748b">v1.4.0 <tspan fill="#334155">·</tspan> Android 8.0+ <tspan fill="#334155">·</tspan> 107 tests passing</text>
+  </g>
+
+  <!-- artwork: two rings woven into one knot -->
+  <g>
+    <!-- orbit decoration -->
+    <ellipse cx="1214" cy="280" rx="316" ry="196" transform="rotate(-18 1214 280)" fill="none" stroke="#2dd4bf" stroke-opacity="0.16" stroke-width="1.2" stroke-dasharray="2 10" stroke-linecap="round"/>
+    <ellipse cx="1214" cy="280" rx="272" ry="166" transform="rotate(14 1214 280)" fill="none" stroke="#5eead4" stroke-opacity="0.07" stroke-width="1"/>
+
+    <!-- white ring glow + body -->
+    <circle cx="1150" cy="280" r="126" fill="none" stroke="#e2e8f0" stroke-opacity="0.28" stroke-width="22" filter="url(#glowSoft)"/>
+    <circle cx="1150" cy="280" r="126" fill="none" stroke="url(#ringWhite)" stroke-width="21"/>
+
+    <!-- teal ring glow + body (passes over white at the lower crossing) -->
+    <circle cx="1278" cy="280" r="126" fill="none" stroke="#14b8a6" stroke-opacity="0.50" stroke-width="22" filter="url(#glowSoft)"/>
+    <circle cx="1278" cy="280" r="126" fill="none" stroke="url(#ringTeal)" stroke-width="21"/>
+
+    <!-- white overpass arc, completes the weave at the upper crossing -->
+    <path d="M1176.2 156.8 A126 126 0 0 1 1243.6 195.7" fill="none" stroke="url(#ringWhite)" stroke-width="21"/>
+
+    <!-- glints -->
+    <circle cx="1214" cy="171.4" r="3.6" fill="#ffffff" fill-opacity="0.9" filter="url(#glowTight)"/>
+    <circle cx="1214" cy="388.6" r="3.6" fill="#5eead4" filter="url(#glowTight)"/>
+
+    <!-- particles -->
+    <g fill="#5eead4">
+      <circle cx="975" cy="212" r="2.4" fill-opacity="0.8"/>
+      <circle cx="1013" cy="404" r="1.8" fill-opacity="0.5"/>
+      <circle cx="1088" cy="124" r="1.6" fill-opacity="0.6"/>
+      <circle cx="1086" cy="446" r="2.2" fill-opacity="0.45"/>
+      <circle cx="1436" cy="196" r="2.6" fill-opacity="0.8"/>
+      <circle cx="1478" cy="358" r="1.8" fill-opacity="0.55"/>
+      <circle cx="1352" cy="108" r="1.6" fill-opacity="0.5"/>
+      <circle cx="1370" cy="462" r="2" fill-opacity="0.4"/>
+      <circle cx="932" cy="300" r="1.5" fill-opacity="0.5"/>
+      <circle cx="1512" cy="282" r="1.5" fill-opacity="0.4"/>
+    </g>
+    <g fill="#ffffff">
+      <circle cx="1052" cy="176" r="1.4" fill-opacity="0.7"/>
+      <circle cx="1416" cy="248" r="1.4" fill-opacity="0.7"/>
+      <circle cx="1188" cy="470" r="1.3" fill-opacity="0.45"/>
+      <circle cx="1290" cy="92" r="1.3" fill-opacity="0.45"/>
+    </g>
+
+    <!-- small sparkles -->
+    <g stroke="#99f6e4" stroke-opacity="0.7" stroke-width="1.4" stroke-linecap="round">
+      <path d="M1010 132 v10 M1005 137 h10"/>
+      <path d="M1452 414 v8 M1448 418 h8"/>
+      <path d="M920 236 v7 M916.5 239.5 h7"/>
+    </g>
+
+    <!-- caption -->
+    <g font-family="'Cascadia Code', 'SF Mono', Consolas, 'Liberation Mono', monospace" font-size="12.5" letter-spacing="2.4" fill="#64748b" text-anchor="middle">
+      <text x="1222" y="496">X25519 · HKDF-SHA256 · AES-256-GCM</text>
+    </g>
+    <path d="M1116 515 h212" stroke="#2dd4bf" stroke-opacity="0.25" stroke-width="1"/>
+  </g>
+</svg>

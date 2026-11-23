@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/assets/knot-banner.jpg" alt="Knot — a private, encrypted thread between two devices" width="100%" />
+<img src="docs/assets/knot-banner.svg" alt="Knot — Two devices. One private thread. Direct, end-to-end encrypted messaging for Android with no account, server, relay, or analytics." width="100%" />
 
 <br/>
 <br/>
