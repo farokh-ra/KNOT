@@ -93,32 +93,16 @@
             android:layout_height="36dp"
             android:background="@drawable/bg_reply_accent" />
 
-        <LinearLayout
+        <TextView
+            android:id="@+id/textReplySnippet"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_marginStart="10dp"
             android:layout_weight="1"
-            android:orientation="vertical">
-
-            <TextView
-                android:id="@+id/textReplyAuthor"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:ellipsize="end"
-                android:maxLines="1"
-                android:textAppearance="?attr/textAppearanceLabelMedium"
-                android:textColor="@color/brand_primary"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/textReplySnippet"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:ellipsize="end"
-                android:maxLines="1"
-                android:textAppearance="?attr/textAppearanceBodySmall"
-                android:textColor="?android:attr/textColorSecondary" />
-        </LinearLayout>
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textAppearance="?attr/textAppearanceBodySmall"
+            android:textColor="?android:attr/textColorSecondary" />
 
         <androidx.appcompat.widget.AppCompatImageButton
             android:id="@+id/buttonCancelReply"
@@ -144,13 +128,27 @@
 
         <androidx.appcompat.widget.AppCompatImageButton
             android:id="@+id/buttonAttach"
-            android:layout_width="48dp"
+            android:layout_width="44dp"
             android:layout_height="48dp"
             android:background="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="@string/chat_attach"
-            android:padding="12dp"
+            android:padding="11dp"
             android:src="@drawable/ic_attach"
             app:tint="?android:attr/textColorSecondary" />
+
+        <TextView
+            android:id="@+id/buttonGif"
+            android:layout_width="44dp"
+            android:layout_height="48dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/chat_gif_gallery"
+            android:gravity="center"
+            android:includeFontPadding="false"
+            android:letterSpacing="0.04"
+            android:text="@string/chat_gif"
+            android:textColor="?android:attr/textColorSecondary"
+            android:textSize="11sp"
+            android:textStyle="bold" />
 
         <com.google.android.material.textfield.TextInputLayout
             android:id="@+id/inputMessageLayout"

@@ -32,6 +32,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import dev.twoperson.messenger.R
 import dev.twoperson.messenger.data.Contact
+import dev.twoperson.messenger.data.GifStore
 import dev.twoperson.messenger.data.Message
 import dev.twoperson.messenger.data.MessageDirection
 import dev.twoperson.messenger.data.MessageKind
@@ -56,6 +57,7 @@ class ChatActivity : KnotActivity() {
     private lateinit var adapter: ChatAdapter
     private lateinit var contactId: String
     private var currentContact: Contact? = null
+    private val gifStore by lazy { GifStore(this) }
 
     private var initialMessagesLoaded = false
     private var scrollOnNextUpdate = false
@@ -66,6 +68,10 @@ class ChatActivity : KnotActivity() {
 
     private val openFiles = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isNotEmpty()) queueFiles(uris)
+    }
+
+    private val openGif = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) importGif(uri)
     }
 
     private var pendingSave: Message? = null
@@ -103,7 +109,7 @@ class ChatActivity : KnotActivity() {
         supportActionBar?.title = getString(R.string.chat_title)
 
         adapter = ChatAdapter(
-            peerName = { currentContact?.name.orEmpty() },
+            gifSource = ::gifSource,
             onFileClick = ::openFile,
             onMessageLongClick = ::showMessageActions,
             onReplyClick = { scrollToMessage(it.id) }
@@ -136,6 +142,7 @@ class ChatActivity : KnotActivity() {
             }
         }
         binding.buttonAttach.setOnClickListener { pickFiles() }
+        binding.buttonGif.setOnClickListener { showGifGallery() }
         binding.buttonScrollBottom.setOnClickListener { scrollToBottom(smooth = true) }
 
         lifecycleScope.launch {
@@ -336,11 +343,6 @@ class ChatActivity : KnotActivity() {
     private fun showReply(message: Message) {
         replyingTo = message
         binding.replyBar.isVisible = true
-        binding.textReplyAuthor.text = if (message.direction == MessageDirection.OUTGOING) {
-            getString(R.string.chat_reply_you)
-        } else {
-            currentContact?.name ?: getString(R.string.chat_reply_peer)
-        }
         binding.textReplySnippet.text = if (message.kind == MessageKind.FILE) {
             ReplyContent.snippet(message.body, isFile = true, fileName = message.fileName)
         } else {
@@ -358,7 +360,6 @@ class ChatActivity : KnotActivity() {
     private fun clearReply() {
         replyingTo = null
         binding.replyBar.isVisible = false
-        binding.textReplyAuthor.text = ""
         binding.textReplySnippet.text = ""
     }
 
@@ -406,6 +407,82 @@ class ChatActivity : KnotActivity() {
     private fun canSend(): Boolean =
         currentContact?.hasInvitation == true &&
             container.repository.activeContact.value?.id == contactId
+
+    private fun showGifGallery() {
+        if (!canSend()) {
+            Toast.makeText(this, R.string.chat_not_paired, Toast.LENGTH_SHORT).show()
+            return
+        }
+        GifPickerSheet.show(
+            activity = this,
+            store = gifStore,
+            onPick = { file -> sendGif(file) },
+            onAdd = { openGif.launch(arrayOf("image/gif")) }
+        )
+    }
+
+    private fun sendGif(file: File) {
+        if (!canSend()) {
+            Toast.makeText(this, R.string.chat_not_paired, Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (!file.isFile || file.length() <= 0) {
+            Toast.makeText(this, R.string.chat_gif_import_failed, Toast.LENGTH_SHORT).show()
+            return
+        }
+        lifecycleScope.launch {
+            val uri = try {
+                FileProvider.getUriForFile(this@ChatActivity, "$packageName.fileprovider", file)
+            } catch (e: Exception) {
+                Toast.makeText(this@ChatActivity, R.string.chat_gif_import_failed, Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            armAutoScroll()
+            val accepted = container.engine.sendFile(uri, file.name, "image/gif", file.length())
+            Toast.makeText(
+                this@ChatActivity,
+                if (accepted) R.string.chat_gif_queued else R.string.chat_attach_failed,
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
+    private fun importGif(uri: Uri) {
+        lifecycleScope.launch {
+            val result = withContext(Dispatchers.IO) { gifStore.import(contentResolver, uri) }
+            when (result) {
+                is GifStore.ImportResult.Added -> {
+                    Toast.makeText(this@ChatActivity, R.string.chat_gif_added, Toast.LENGTH_SHORT).show()
+                    showGifGallery()
+                }
+
+                GifStore.ImportResult.TooLarge ->
+                    Toast.makeText(this@ChatActivity, R.string.chat_gif_too_large, Toast.LENGTH_LONG).show()
+
+                GifStore.ImportResult.Invalid ->
+                    Toast.makeText(this@ChatActivity, R.string.chat_gif_invalid, Toast.LENGTH_SHORT).show()
+
+                GifStore.ImportResult.Failed ->
+                    Toast.makeText(this@ChatActivity, R.string.chat_gif_import_failed, Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    /** The animated bubble can render from the gallery file or the completed incoming file. */
+    private fun gifSource(message: Message): Any? {
+        if (!message.isGif) return null
+        val path = message.filePath
+        if (!path.isNullOrBlank()) {
+            val file = File(path)
+            if (file.isFile) return file
+        }
+        val raw = message.fileUri ?: return null
+        return try {
+            Uri.parse(raw)
+        } catch (e: Exception) {
+            null
+        }
+    }
 
     private fun pickFiles() {
         if (!canSend()) {

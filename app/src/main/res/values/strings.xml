@@ -278,6 +278,7 @@
     <!-- Preview formatting -->
     <string name="home_preview_you">You: %1$s</string>
     <string name="home_file_preview">File · %1$s</string>
+    <string name="home_gif_preview">GIF · %1$s</string>
     <string name="chat_preview_empty">No messages yet</string>
 
     <!-- Chat reply -->
@@ -285,9 +286,18 @@
     <string name="chat_cancel_reply">Cancel reply</string>
     <string name="chat_action_reply">Reply</string>
     <string name="chat_action_go_to_quoted">Go to quoted message</string>
-    <string name="chat_reply_you">You</string>
-    <string name="chat_reply_peer">Contact</string>
-    <string name="chat_reply_unknown">Reply</string>
+
+    <!-- GIF gallery -->
+    <string name="chat_gif">GIF</string>
+    <string name="chat_gif_gallery">GIF gallery</string>
+    <string name="chat_gif_hint">Your GIFs stay only on this device.</string>
+    <string name="chat_gif_add">Add GIF</string>
+    <string name="chat_gif_empty">No GIFs yet. Add your own .gif files and send them any time.</string>
+    <string name="chat_gif_added">GIF added to your gallery</string>
+    <string name="chat_gif_invalid">That file is not a valid GIF.</string>
+    <string name="chat_gif_too_large">That GIF is larger than 50 MB.</string>
+    <string name="chat_gif_import_failed">Could not add that GIF.</string>
+    <string name="chat_gif_queued">GIF queued</string>
 
     <!-- New conversation sheet -->
     <string name="new_conversation_title">New conversation</string>

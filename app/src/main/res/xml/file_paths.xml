@@ -3,4 +3,5 @@
     <!-- Completed incoming files and app-private copies of outgoing files. -->
     <files-path name="incoming" path="incoming/" />
     <files-path name="outgoing" path="outgoing/" />
+    <files-path name="gifs" path="gifs/" />
 </paths>

@@ -22,7 +22,7 @@ import dev.twoperson.messenger.databinding.ItemMessageBinding
 import java.util.Locale
 
 class ChatAdapter(
-    private val peerName: () -> String,
+    private val gifSource: (Message) -> Any?,
     private val onFileClick: (Message) -> Unit,
     private val onMessageLongClick: (Message) -> Unit,
     private val onReplyClick: (Message) -> Unit
@@ -41,7 +41,7 @@ class ChatAdapter(
             quoted = getItem(position).replyToId?.let { id ->
                 currentList.firstOrNull { it.id == id }
             },
-            peerName = peerName,
+            gifSource = gifSource,
             onFileClick = onFileClick,
             onMessageLongClick = onMessageLongClick,
             onReplyClick = onReplyClick
@@ -63,7 +63,7 @@ class ChatAdapter(
             message: Message,
             previous: Message?,
             quoted: Message?,
-            peerName: () -> String,
+            gifSource: (Message) -> Any?,
             onFileClick: (Message) -> Unit,
             onMessageLongClick: (Message) -> Unit,
             onReplyClick: (Message) -> Unit
@@ -71,10 +71,12 @@ class ChatAdapter(
             val context = binding.root.context
             val outgoing = message.direction == MessageDirection.OUTGOING
             val isFile = message.kind == MessageKind.FILE
+            val gif = if (message.isGif) gifSource(message) else null
+            val showGif = gif != null
 
             bindDateHeader(context, message, previous)
             bindBubbleShape(context, message, previous)
-            bindReply(context, message, quoted, peerName, outgoing, onReplyClick)
+            bindReply(context, message, quoted, outgoing, onReplyClick)
 
             val contentColor = ContextCompat.getColor(
                 context,
@@ -90,7 +92,13 @@ class ChatAdapter(
             binding.bubbleCard.alpha = if (outgoing && message.state == MessageState.FAILED) 0.78f else 1f
 
             binding.textBody.isVisible = !isFile
-            binding.fileRow.isVisible = isFile
+            binding.fileRow.isVisible = isFile && !showGif
+            binding.imageGif.isVisible = showGif
+            if (showGif) {
+                GifLoader.load(binding.imageGif, gif)
+            } else {
+                binding.imageGif.setImageDrawable(null)
+            }
             binding.textBody.text = if (isFile) "" else message.body
             binding.textBody.setTextColor(contentColor)
             // Long-press opens the message actions (reply, copy, retry, delete). Text selection
@@ -139,7 +147,7 @@ class ChatAdapter(
             }
             binding.bubbleCard.layoutParams = layoutParams
 
-            if (isFile) {
+            if (isFile && !message.isGif) {
                 binding.bubbleCard.setOnClickListener { onFileClick(message) }
             } else {
                 binding.bubbleCard.setOnClickListener(null)
@@ -149,8 +157,9 @@ class ChatAdapter(
                 true
             }
             // Recycled rows keep listener state; explicit flags keep the ripple limited to
-            // tappable file bubbles while every bubble remains long-pressable.
-            binding.bubbleCard.isClickable = isFile
+            // tappable file bubbles while every bubble remains long-pressable. A GIF plays in
+            // place, so tapping it must not hand the file to an external viewer.
+            binding.bubbleCard.isClickable = isFile && !message.isGif
             binding.bubbleCard.isLongClickable = true
         }
 
@@ -158,7 +167,6 @@ class ChatAdapter(
             context: Context,
             message: Message,
             quoted: Message?,
-            peerName: () -> String,
             outgoing: Boolean,
             onReplyClick: (Message) -> Unit
         ) {
@@ -168,21 +176,11 @@ class ChatAdapter(
                 binding.replyBlock.setOnClickListener(null)
                 return
             }
-            val author = when (quoted?.direction) {
-                MessageDirection.OUTGOING -> context.getString(R.string.chat_reply_you)
-                MessageDirection.INCOMING -> peerName().ifBlank {
-                    context.getString(R.string.chat_reply_peer)
-                }
-
-                null -> context.getString(R.string.chat_reply_unknown)
-            }
             val accent = ContextCompat.getColor(
                 context,
                 if (outgoing) R.color.bubble_out_text else R.color.brand_primary
             )
             binding.replyAccent.setBackgroundColor(accent)
-            binding.textReplyAuthor.text = author
-            binding.textReplyAuthor.setTextColor(accent)
             binding.textReplySnippet.text = ReplyContent.snippet(snippet)
             binding.textReplySnippet.setTextColor(
                 ContextCompat.getColor(
