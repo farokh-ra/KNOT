@@ -48,6 +48,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="5dp"
+                    android:minWidth="140dp"
                     android:orientation="horizontal"
                     android:visibility="gone">
 
@@ -65,10 +66,11 @@
 
                         <TextView
                             android:id="@+id/textReplyAuthor"
-                            android:layout_width="match_parent"
+                            android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:ellipsize="end"
                             android:maxLines="1"
+                            android:minWidth="140dp"
                             android:textAppearance="?attr/textAppearanceLabelMedium"
                             android:textStyle="bold" />
 
