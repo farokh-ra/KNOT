@@ -77,7 +77,7 @@ aapt2 dump badging app-release.apk
 sha256sum app-release.apk
 ```
 
-Expected: package `dev.twoperson.messenger`, versionCode `7`, versionName `1.3.0`,
+Expected: package `dev.twoperson.messenger`, versionCode `8`, versionName `1.4.0`,
 `sdkVersion:'26'`, `targetSdkVersion:'34'`, signed by your local release certificate (the
 build on this machine uses `CN=Knot Release, O=Knot, C=US`), and the same SHA-256 as the
 checksum you recorded for your build. A different signing key means the app cannot upgrade

@@ -65,7 +65,7 @@ Recorded results:
 - `:app:lintDebug` completes with no errors (warnings are informational);
 - debug and release APKs build from a clean Gradle cache;
 - the release APK verifies with the local `knot` certificate (v2/v3 signature scheme);
-- package `dev.twoperson.messenger`, versionCode 7, versionName 1.3.0, minSdk 26, targetSdk 34;
+- package `dev.twoperson.messenger`, versionCode 8, versionName 1.4.0, minSdk 26, targetSdk 34;
 - record the SHA-256 of your local build.
 
 ### Not verified here

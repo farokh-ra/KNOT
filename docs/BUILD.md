@@ -57,7 +57,7 @@ $ANDROID_HOME/build-tools/34.0.0/aapt2 dump badging <apk>
 sha256sum <apk>
 ```
 
-Expected: `package: name='dev.twoperson.messenger' versionCode='7' versionName='1.3.0'`,
+Expected: `package: name='dev.twoperson.messenger' versionCode='8' versionName='1.4.0'`,
 `sdkVersion:'26'`, `targetSdkVersion:'34'`, and a verified v2/v3 signature with the local
 certificate.
 
