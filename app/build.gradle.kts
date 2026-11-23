@@ -23,11 +23,11 @@ android {
         applicationId = "dev.twoperson.messenger"
         minSdk = 26
         targetSdk = 34
-        // 7 / 1.3.0: quoted replies, Telegram-style chat, tabbed settings, English/Farsi
-        // language support and an always-available create/join conversation flow. The package
-        // id and signing key stay stable so an existing install upgrades in place.
-        versionCode = 7
-        versionName = "1.3.0"
+        // 8 / 1.4.0: a local autoplaying GIF gallery, inline animated GIF messages and
+        // name-free quoted replies. The package id and signing key stay stable so an existing
+        // install upgrades in place.
+        versionCode = 8
+        versionName = "1.4.0"
         vectorDrawables.useSupportLibrary = true
     }
 
@@ -110,6 +110,10 @@ dependencies {
     implementation("androidx.activity:activity-ktx:1.9.3")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+
+    // Local image loading with animated GIF support (API 26+). No network fetches are used.
+    implementation("io.coil-kt:coil:2.7.0")
+    implementation("io.coil-kt:coil-gif:2.7.0")
 
     // QR generation (pure Java, no native code).
     implementation("com.google.zxing:core:3.5.3")

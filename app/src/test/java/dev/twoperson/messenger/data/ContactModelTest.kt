@@ -156,15 +156,24 @@ class ContactModelTest {
         )
         assertEquals(
             "You: hello",
-            ChatPreview.build(outgoing, "You: %1\$s", "File · %1\$s", "No messages")
+            ChatPreview.build(outgoing, "You: %1\$s", "File · %1\$s", "GIF · %1\$s", "No messages")
         )
         assertEquals(
             "File · report.pdf",
-            ChatPreview.build(incomingFile, "You: %1\$s", "File · %1\$s", "No messages")
+            ChatPreview.build(incomingFile, "You: %1\$s", "File · %1\$s", "GIF · %1\$s", "No messages")
+        )
+        val incomingGif = incomingFile.copy(
+            body = "cat.gif",
+            fileName = "cat.gif",
+            mimeType = "image/gif"
+        )
+        assertEquals(
+            "GIF · cat.gif",
+            ChatPreview.build(incomingGif, "You: %1\$s", "File · %1\$s", "GIF · %1\$s", "No messages")
         )
         assertEquals(
             "No messages",
-            ChatPreview.build(null, "You: %1\$s", "File · %1\$s", "No messages")
+            ChatPreview.build(null, "You: %1\$s", "File · %1\$s", "GIF · %1\$s", "No messages")
         )
     }
 }

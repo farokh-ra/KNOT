@@ -40,6 +40,13 @@ data class Message(
     val replySnippet: String? = null
 ) {
     val isReply: Boolean get() = !replySnippet.isNullOrBlank()
+
+    /** True for an animated GIF sent through the encrypted file channel. */
+    val isGif: Boolean
+        get() = kind == MessageKind.FILE && (
+            mimeType.equals("image/gif", ignoreCase = true) ||
+                fileName?.endsWith(".gif", ignoreCase = true) == true
+            )
 }
 
 /**
@@ -163,11 +170,14 @@ object ChatPreview {
         message: Message?,
         youPrefix: String,
         filePrefix: String,
+        gifPrefix: String,
         emptyLabel: String
     ): String {
         if (message == null) return emptyLabel
         val content = when (message.kind) {
-            MessageKind.FILE -> filePrefix.format(message.fileName ?: message.body)
+            MessageKind.FILE -> (if (message.isGif) gifPrefix else filePrefix)
+                .format(message.fileName ?: message.body)
+
             MessageKind.TEXT -> message.body
         }
         return if (message.direction == MessageDirection.OUTGOING) {

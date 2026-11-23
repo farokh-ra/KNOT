@@ -1,44 +1,49 @@
 <div align="center">
 
-<img src="docs/assets/knot-mark.svg" width="96" height="96" alt="Knot app icon" />
+<img src="docs/assets/knot-banner.jpg" alt="Knot — a private, encrypted thread between two devices" width="100%" />
+
+<br/>
+<br/>
+
+<img src="docs/assets/knot-mark.svg" width="92" height="92" alt="Knot app icon" />
 
 # Knot
 
 **Two devices. One private thread.**
 
-Direct, end-to-end encrypted messaging for Android — with no account, no messaging
-backend, no relay and no analytics.
+Direct, end-to-end encrypted messaging for Android. No account, no message server,
+no relay, no analytics.
 
 [![CI](https://img.shields.io/github/actions/workflow/status/farokh-ra/KNOT/android.yml?branch=main&label=CI&style=flat-square&logo=github)](https://github.com/farokh-ra/KNOT/actions/workflows/android.yml)
-[![Version](https://img.shields.io/badge/version-1.3.0-14B8A6?style=flat-square)](https://github.com/farokh-ra/KNOT)
+[![Version](https://img.shields.io/badge/version-1.4.0-14B8A6?style=flat-square)](https://github.com/farokh-ra/KNOT)
 [![Tests](https://img.shields.io/badge/tests-107%20passing-22C55E?style=flat-square)](docs/TESTING.md)
 [![Platform](https://img.shields.io/badge/Android-8.0%2B-3DDC84?style=flat-square&logo=android&logoColor=white)](https://developer.android.com)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.0.21-7F52FF?style=flat-square&logo=kotlin&logoColor=white)](https://kotlinlang.org)
-[![Backend](https://img.shields.io/badge/backend-none-0F172A?style=flat-square)](#privacy-by-design)
+[![Backend](https://img.shields.io/badge/backend-none-0F172A?style=flat-square)](#security-model)
 [![Stars](https://img.shields.io/github/stars/farokh-ra/KNOT?style=flat-square&logo=github)](https://github.com/farokh-ra/KNOT/stargazers)
 
-[Why Knot](#why-knot) · [Features](#features) · [How it works](#how-it-works) ·
-[Security](#security-model) · [Build](#build-from-source) · [Install](#install-and-first-run) ·
-[Testing](#testing) · [Limitations](#limitations) · [FAQ](#faq)
+[Why Knot](#why-knot) · [What's new](#whats-new-in-140) · [Features](#features) ·
+[How it works](#how-it-works) · [Security](#security-model) · [Build](#build-from-source) ·
+[Install](#install-and-first-run) · [Testing](#testing) · [Limitations](#limitations) · [FAQ](#faq)
 
 </div>
 
 ---
 
 > [!NOTE]
-> **v1.3.0 — conversations that feel familiar.** The chat is now a Telegram-style thread with
-> quoted replies (long-press or swipe a bubble), delivery ticks, follow-at-bottom scrolling and
-> a composer that moves with the keyboard. Settings are split into four short tabs, and every
-> screen is fully translated into English and Persian (فارسی) with an in-app language switch.
-> A create/join sheet is always one tap away. There is still no push service or relay; see
-> [Limitations](#limitations) for the cases a direct-only design cannot cover.
+> **v1.4.0 — your GIFs, your gallery.**
+> Knot now has a built-in GIF gallery. Import `.gif` files from your phone once, then send them
+> from any conversation whenever you like. Every GIF autoplays — in the picker, in outgoing
+> bubbles and in incoming bubbles — with no tap and no play button. Quoted replies are cleaner
+> too: the quote shows the message itself, not the sender's name. This release also adds the
+> platform-native animated image path and a small chat-list polish.
 
 ## Why Knot
 
 Most messengers ask you to trust their server. Knot removes the server from the conversation.
-The two phones discover each other through public rendezvous infrastructure and then talk
-directly. If a direct path does not exist, the app says so instead of quietly routing your
-messages through a third party.
+Two phones discover each other through public rendezvous infrastructure, then talk directly.
+If a direct path does not exist, the app says so instead of quietly routing your messages
+through a third party.
 
 <table>
 <tr>
@@ -75,7 +80,7 @@ outbox keep both sides listening and retrying.
 |---|---|
 | **App** | Knot |
 | **Package** | `dev.twoperson.messenger` |
-| **Version** | 1.3.0 (versionCode 7) |
+| **Version** | 1.4.0 (versionCode 8) |
 | **Platform** | Android 8.0 (API 26) and newer |
 | **Language** | Kotlin 2.0.21 |
 | **UI** | Android Views, Material 3, ViewBinding |
@@ -84,13 +89,63 @@ outbox keep both sides listening and retrying.
 | **Backend** | None |
 | **Build** | Gradle 8.11.1 · AGP 8.7.3 · JDK 17+ |
 
+## What's new in 1.4.0
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+### GIF gallery
+
+- A dedicated **GIF** button in the composer.
+- Import your own `.gif` files through the system picker.
+- Files are validated, size-capped and copied into app-private storage.
+- The gallery is yours alone; nothing is uploaded anywhere.
+- Tap any tile to send it immediately.
+
+</td>
+<td width="50%" valign="top">
+
+### Autoplay, everywhere
+
+- Gallery tiles animate as soon as they appear.
+- Outgoing and incoming GIFs animate inline in the chat.
+- No play button, no tap-to-start, no static first frame.
+- The platform decoder handles modern devices; a bundled fallback covers Android 8–8.1.
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+### Cleaner replies
+
+- The reply bar shows the quoted message only.
+- The quote inside the bubble also omits the sender's name.
+- The original message is still one tap away.
+
+</td>
+<td width="50%" valign="top">
+
+### Small but useful
+
+- The chat list labels GIFs as **GIF**, not as generic files.
+- The gallery keeps its empty state, import button and RTL layout.
+- Version 1.4.0 keeps the same database and pairing format as 1.3.0.
+
+</td>
+</tr>
+</table>
+
 ## Features
 
 | Area | What you get |
 |---|---|
 | **Private conversations** | A local address book with search, private notes and per-contact invitations. Each contact owns one independent thread, its own secret and a pinned peer identity. Add as many contacts as you like and switch between them freely. |
+| **GIF gallery** | A composer button opens your personal GIF library. Import `.gif` files from the phone, preview them with live animation, and send any of them with one tap. Imports are validated as GIF87a/GIF89a, capped at 50 MB and stored only in app-private storage. |
+| **GIF autoplay** | Every GIF plays automatically on every surface: gallery tiles, outgoing chat bubbles and incoming chat bubbles. The same loader is used everywhere, so there is no “tap to play” state in the app. |
 | **Telegram-style chat** | Date chips, grouped bubbles, delivery ticks, a floating jump-to-latest button and a follow-at-bottom scroll policy: incoming messages never pull you away while you are reading older ones. |
-| **Quoted replies** | Long-press a bubble (or swipe it right) to reply. The quote travels with the message, survives a local delete and can be tapped to jump back to the original. |
+| **Quoted replies** | Long-press a bubble (or swipe it right) to reply. The quote shows the message text only — no sender name — travels with the reply, survives a local delete and can be tapped to jump back to the original. |
 | **Two languages** | Complete English and Persian (فارسی) translations with RTL layout support and a per-app language switch in Settings; the choice is remembered locally. |
 | **One-tap new conversation** | The create/join button is always on screen on Chats and Contacts. Pick *create a contact & show QR* or *join with a code*, then scan or paste. |
 | **Pair once** | Phone A creates a 32-byte invitation; phone B scans the QR code or pastes the `TPM1-…` code. Both devices derive the same authentication key and rendezvous topic locally. |
@@ -99,19 +154,20 @@ outbox keep both sides listening and retrying.
 | **Realtime delivery** | While a contact is paired, a `dataSync` foreground service keeps the engine alive with the screen off. Every genuine default-network change tears down the stale socket and revalidates; returning to the app after more than five seconds forces a fresh handshake. |
 | **Faster recovery** | Heartbeats run every 3 seconds and a dead peer is detected after 15 seconds. The saved last endpoint is redialled while discovery runs in parallel. |
 | **Reliable messaging** | Messages are stored before sending, retried after reconnection and acknowledged only after the peer stores them. Stable IDs suppress duplicates on resend. |
-| **Files of any size** | Text and file blocks share the encrypted link. Files stream in 16 KiB blocks with progress, flow control, resume from the receiver's durable offset and an end-to-end FNV-1a digest check. |
+| **Files of any size** | Text, files and GIFs share the encrypted link. Files stream in 16 KiB blocks with progress, flow control, resume from the receiver's durable offset and an end-to-end FNV-1a digest check. |
 | **Honest states** | The UI shows discovering, connecting, connected, disconnected and unable-to-connect states, and names the route that actually carried the link. |
 | **Private alerts** | A high-importance notification appears only for a real incoming message or completed file while no Knot screen is visible. Previews can be hidden and the lockscreen version is redacted. |
-| **Local-first history** | SQLite lives in the app sandbox. Received files and outgoing fallback copies stay app-private. Clearing app data or uninstalling removes them permanently. |
+| **Local-first history** | SQLite lives in the app sandbox. Received files, outgoing fallback copies and imported GIFs stay app-private. Clearing app data or uninstalling removes them permanently. |
 | **No telemetry** | No analytics, crash SDK, advertising ID or account system. |
 
 ### What Knot deliberately does **not** do
 
 No group chats, voice or video calls, cloud backup, server push, read receipts, typing
-indicators, contact discovery, accounts, phone-number login or message relay. A file transfer
-still requires both devices to be online at the same time. Each contact is intentionally one
-private conversation; Knot never merges contacts into a group, and only one direct connection
-runs at a time.
+indicators, contact discovery, accounts, phone-number login or message relay. A file or GIF
+transfer still requires both devices to be online at the same time. Each contact is
+intentionally one private conversation; Knot never merges contacts into a group, and only one
+direct connection runs at a time. The GIF gallery is not a searchable sticker service: it is a
+private, on-device library that you fill yourself.
 
 ## How it works
 
@@ -176,10 +232,10 @@ on the next connection.
 | **Received by peer** | The peer stored the message and returned an application-level ACK |
 | **Not delivered** | The link closed before delivery; the message is kept and retried |
 
-### 5. File transfer
+### 5. Files and GIFs
 
-Files use the same authenticated, encrypted reliable channel as text — there is still no relay
-and no separate upload service:
+Files and GIFs use the same authenticated, encrypted reliable channel as text — there is still
+no relay and no separate upload service:
 
 1. The sender stores the file reference (a persisted Storage Access Framework URI, or an
    app-private copy when the provider cannot report a size) and inserts a visible file message.
@@ -198,6 +254,11 @@ and no separate upload service:
    persisted prefix digest. A block that could not be queued is retained and retried, so a full
    send window never loses bytes.
 
+A GIF is simply a file with MIME type `image/gif`: it travels over the same channel, is stored
+like any received file and is rendered by the animated image loader instead of a file card.
+Gallery imports are copied into `filesDir/gifs` and exposed through a `FileProvider` read
+grant, so the gallery does not depend on the original document permission.
+
 The protocol caps a file at 4 TiB and a name at 255 UTF-8 bytes; the UI reports oversize files
 instead of creating a message. Clearing a conversation cancels active transfers and removes the
 app-private copies that belonged to the deleted messages; the original file chosen through the
@@ -208,7 +269,7 @@ system picker is never touched.
 ```mermaid
 flowchart LR
     subgraph A["Phone A"]
-        AUI["Knot UI<br/>Chats · Contacts · Settings<br/>Pairing · Chat · About"]
+        AUI["Knot UI<br/>Chats · Contacts · Settings<br/>Pairing · Chat · GIF gallery"]
         AENG["Connection engine<br/>contact selection · outbox · ACKs"]
         ASTORE[("SQLite history<br/>Keystore-wrapped secrets")]
         AUI --> AENG
@@ -216,7 +277,7 @@ flowchart LR
     end
 
     subgraph B["Phone B"]
-        BUI["Knot UI<br/>Chats · Contacts · Settings<br/>Pairing · Chat · About"]
+        BUI["Knot UI<br/>Chats · Contacts · Settings<br/>Pairing · Chat · GIF gallery"]
         BENG["Connection engine<br/>contact selection · outbox · ACKs"]
         BSTORE[("SQLite history<br/>Keystore-wrapped secrets")]
         BUI --> BENG
@@ -231,12 +292,13 @@ flowchart LR
 
 | Layer | Responsibility |
 |---|---|
-| **UI** | Tabbed Material 3 shell — Chats, Contacts, Settings — plus Pairing, Chat, Contact detail and About screens; contact search, chat previews, unread badges, date separators, file bubbles and jump-to-latest. |
+| **UI** | Tabbed Material 3 shell — Chats, Contacts, Settings — plus Pairing, Chat, Contact detail and About screens; GIF gallery, contact search, chat previews, unread badges, date separators, file/GIF bubbles and jump-to-latest. |
 | **Service** | Always-on `dataSync` foreground service that holds the engine lifetime and restarts after reboot or app update; silent service channel and a separate per-conversation alerting channel. |
 | **Engine** | Contact-scoped connection state machine, parallel discovery loop, per-contact outbox, file transfer manager, acknowledgements, network-change revalidation and reconnect backoff. |
-| **Protocol** | Versioned v4 binary schema with strict validation, chunking, bounded reassembly and file offer/data/ack/end/done messages. |
+| **Protocol** | Versioned v5 binary schema with strict validation, chunking, bounded reassembly and file offer/data/ack/end/done messages. |
 | **Transport** | One UDP socket, authenticated handshake, encrypted reliable frames, a 4096-frame window and heartbeats. |
-| **Storage** | SQLite message and transfer state, app-private files, pinned peer identity and Keystore-wrapped secrets. |
+| **Storage** | SQLite message and transfer state, app-private files and GIFs, pinned peer identity and Keystore-wrapped secrets. |
+| **Media** | Platform `ImageDecoder` for animated GIFs on API 28+, Coil's GIF decoder as the Android 8.x fallback; one shared loader for gallery and chat. |
 | **Crypto** | X25519, HKDF-SHA256, HMAC-SHA256 and AES-256-GCM. |
 
 The full design is in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and the exact wire format
@@ -258,9 +320,9 @@ invitation is exchanged out-of-band with the intended person.
 | **Identity pinning** | The peer's static X25519 identity is pinned after the first successful pairing; a changed identity is rejected |
 | **Secret storage** | The identity private key and invitation secret are wrapped with a non-exportable AES key held in the Android Keystore |
 | **Discovery privacy** | Only the HMAC-derived 20-byte topic is published to DHT nodes and trackers; STUN only reflects the socket's public endpoint. The invitation secret is never published |
-| **File confidentiality** | File blocks travel inside the same AES-256-GCM frames as text; offer, name, MIME type, offsets and acknowledgements are authenticated application messages |
-| **File bounds** | A 4 TiB schema cap, 16 KiB blocks, 255-byte UTF-8 names, 128-byte MIME types and sanitized paths prevent unbounded or traversal-style writes |
-| **File storage** | Received files land in app-private `filesDir/incoming`; outgoing copies use `filesDir/outgoing`. Sharing and opening use a `FileProvider` read grant |
+| **File and GIF confidentiality** | File blocks, GIF bytes, names, MIME types, offsets and acknowledgements travel inside the same authenticated AES-256-GCM frames as text |
+| **File bounds** | A 4 TiB schema cap, 16 KiB blocks, 255-byte UTF-8 names, 128-byte MIME types and sanitized paths prevent unbounded or traversal-style writes; gallery imports are separately capped at 50 MB |
+| **File storage** | Received files land in app-private `filesDir/incoming`; outgoing copies use `filesDir/outgoing`; imported GIFs live in `filesDir/gifs`. Sharing and opening use a `FileProvider` read grant |
 | **Notification privacy** | Message alerts use `VISIBILITY_PRIVATE` with a redacted public version; the ongoing service notification is silent and minimum-importance |
 | **Relay** | None. There is no relay, TURN or forwarding code path anywhere in the project |
 
@@ -273,9 +335,9 @@ invitation is exchanged out-of-band with the intended person.
 - Pairing is **trust-on-first-use**. If someone obtains the invitation before the intended
   person pairs, they can become the first peer. Invitations do not expire; replacing the
   invitation or using *Unpair device* is manual.
-- Message history **and received files are not encrypted at rest**. They sit in plain SQLite
-  and app-private storage inside the sandbox; the identity key and invitation secret are
-  wrapped, but message text and file bytes are not.
+- Message history, received files and imported GIFs are **not encrypted at rest**. They sit in
+  plain SQLite and app-private storage inside the sandbox; the identity key and invitation
+  secret are wrapped, but message text and file bytes are not.
 - Outgoing files are referenced by a persisted Storage Access Framework URI. If the provider
   revokes that grant, or the app is reinstalled, the message reports the file as unavailable;
   providers that cannot report a size are copied into app storage first.
@@ -301,6 +363,7 @@ Read the full threat model and checklist in [`docs/SECURITY.md`](docs/SECURITY.m
 | Discovery | BEP 15 UDP trackers, RFC 5389 STUN, BitTorrent mainline DHT (BEP 5), LAN broadcast beacon |
 | Cryptography | `java.security` / `javax.crypto`: X25519, HKDF-SHA256, HMAC-SHA256, AES-256-GCM |
 | Storage | SQLite (`SQLiteOpenHelper`), Android Keystore |
+| Media | `ImageDecoder` + `AnimatedImageDrawable` (API 28+); Coil 2.7 `coil-gif` fallback |
 | QR | ZXing core + `zxing-android-embedded` (no Play Services) |
 | Build | Gradle 8.11.1, AGP 8.7.3, JDK 17+ |
 | Tests | JUnit 4, `kotlinx-coroutines-test`, real loopback UDP |
@@ -418,7 +481,7 @@ build with no native libraries, so it runs on arm64, arm32 and x86 devices with 
 
 ### For the best realtime delivery
 
-1. Install **the same 1.3.0 build on both phones** and open Knot once after pairing.
+1. Install **the same 1.4.0 build on both phones** and open Knot once after pairing.
 2. Keep the silent **Always-on connection** notification enabled. Android requires it while
    the foreground service holds the direct link.
 3. Set Knot's battery usage to **Unrestricted** (Settings → Apps → Knot → Battery, or tap
@@ -437,25 +500,30 @@ build with no native libraries, so it runs on arm64, arm32 and x86 devices with 
 4. Open the conversation and type. Tap the paperclip to attach one or more files. Each file
    appears as a bubble with its size and live progress; tap a completed file to open it, or
    long-press to share it.
-5. Long-press any bubble and choose **Reply**, or swipe the bubble to the right. The quoted
-   message appears above the composer and inside your reply; tap a quote to jump back to the
-   original message.
-6. The chat follows new messages while you are at the bottom. Scroll up and incoming messages
+5. Tap **GIF** in the composer to open your gallery. On first use, tap **Add GIF** and pick one
+   or more `.gif` files; they are copied into Knot and appear as animated tiles. Tap a tile to
+   send it. The same gallery is available in every conversation and survives app restarts.
+6. Every GIF plays automatically. Gallery tiles animate in place, and outgoing and incoming GIF
+   bubbles animate inline as soon as they are visible.
+7. Long-press any bubble and choose **Reply**, or swipe the bubble to the right. The reply bar
+   and the quote inside your message show **only the original message**, not a sender name.
+   Tap a quote to jump back to the original.
+8. The chat follows new messages while you are at the bottom. Scroll up and incoming messages
    stop pulling the list; a down-arrow button returns you to the latest. Sending a message
    always brings you back.
-7. Rename any contact from the three-dot menu on the **Chats** or **Contacts** list. Renaming is
+9. Rename any contact from the three-dot menu on the **Chats** or **Contacts** list. Renaming is
    local only: the other device keeps its own name for you.
-8. Notifications are posted only for real incoming messages and completed files while no Knot
-   screen is visible. Opening a conversation clears its alert.
-9. **Settings** is split into **General**, **Chats**, **Privacy** and **About** tabs. General
-   holds the language and theme; Chats holds notifications, previews and the always-on battery
-   shortcut; Privacy holds screen security and the data controls. Screen security blocks
-   screenshots and recent-apps previews; pairing screens are always protected.
+10. Notifications are posted only for real incoming messages and completed files while no Knot
+    screen is visible. Opening a conversation clears its alert.
+11. **Settings** is split into **General**, **Chats**, **Privacy** and **About** tabs. General
+    holds the language and theme; Chats holds notifications, previews and the always-on battery
+    shortcut; Privacy holds screen security and the data controls. Screen security blocks
+    screenshots and recent-apps previews; pairing screens are always protected.
 
 Use **Clear conversation** to cancel active transfers and delete local history plus the
 app-private copies that belonged to it (the pairing survives), or **Unpair device** to remove
 the invitation and require a new pairing. **Settings → Delete all contacts & data** removes
-every contact, message, file and local setting.
+every contact, message, file, imported GIF and local setting.
 
 ## Testing
 
@@ -481,7 +549,7 @@ quotes, scroll policy and settings. The tests use real sockets and real crypto, 
 | `net.dht.BencodeTest` | 5 | Nested bencode round trip, canonical order, malformed input |
 | `net.rendezvous.StunClientTest` | 2 | XOR-MAPPED-ADDRESS parsing, forged-transaction rejection |
 | `net.rendezvous.TrackerRendezvousTest` | 1 | Real BEP 15 connect/announce format, compact peer parsing, announce throttle |
-| `data.ContactModelTest` | 12 | Name/note sanitization, initials, search, pairing flags, chat sort order and preview formatting |
+| `data.ContactModelTest` | 12 | Name/note sanitization, initials, search, pairing flags, chat sort order and preview formatting for text, files and GIFs |
 | `data.SettingsModelTest` | 8 | Theme parsing, notification preview policy, always-on service policy and defaults |
 | `data.ReplyContentTest` | 5 | Quote whitespace collapsing, empty/file quotes, code-point-safe truncation |
 | `engine.ConnectionRouteTest` | 2 | Route wire codes map to the route that actually carried the link |
@@ -491,9 +559,13 @@ quotes, scroll policy and settings. The tests use real sockets and real crypto, 
 
 `:app:lintDebug` also completes with no lint errors. Build and artifact checks are recorded in
 [`docs/TESTING.md`](docs/TESTING.md), along with the **two-phone test matrix** that still needs to
-be completed on physical hardware. No emulator or physical device was attached to the build
-machine, so installation, QR scanning and real-world NAT traversal remain to be verified by the
-user.
+be completed on physical hardware.
+
+Version 1.4.0 was additionally exercised on two Android 15 emulators: pairing and direct
+connection, text and file messaging, quoted replies, GIF import through the system picker,
+animated gallery tiles, sending from the gallery, animated chat bubbles, RTL/Persian layout and
+the four settings tabs. The emulator run used debug builds; physical-device NAT traversal and
+the full matrix remain the user's verification step.
 
 ## Project structure
 
@@ -508,14 +580,14 @@ KNOT/
 │       │   │   ├── net/              UDP transport, handshake, secure channel, reliable link
 │       │   │   ├── net/dht/          Bencode and minimal mainline-DHT rendezvous client
 │       │   │   ├── net/rendezvous/   BEP 15 UDP trackers, STUN, shared-socket rendezvous
-│       │   │   ├── data/             Contacts, SQLite history and transfers, settings, secrets
+│       │   │   ├── data/             Contacts, SQLite history and transfers, GIF store, settings
 │       │   │   ├── engine/           Connection state machine, discovery, outbox, file streaming
 │       │   │   ├── service/          Always-on foreground service and notifications
 │       │   │   ├── util/             Visibility tracking and theme controller
-│       │   │   └── ui/               Tabbed shell, chat list, contacts, settings, pairing, chat
+│       │   │   └── ui/               Shell, chats, contacts, settings, pairing, chat, GIF gallery
 │       │   └── res/                  Material 3 themes, layouts, icons, FileProvider paths
 │       └── test/                     107 JVM tests (crypto, protocol, replies, loopback link, models)
-├── docs/                             Architecture, protocol, security, testing, build, install
+├── docs/                             Architecture, protocol, security, testing, build, install, assets
 ├── gradle/                           Gradle wrapper
 ├── signing/                          Local signing material (git-ignored)
 ├── build.gradle.kts
@@ -554,8 +626,8 @@ KNOT/
   UDP cannot discover peers; UDP trackers on ports 80/443 cover the common case where only the
   DHT's port 6881 is blocked.
 - **Both people must have the app running.** There is no push notification and no server to
-  hold messages or file bytes. A message or file sent while the peer is offline stays queued on
-  the sender.
+  hold messages or file bytes. A message, file or GIF sent while the peer is offline stays
+  queued on the sender.
 - **Background delivery is always on but still best-effort.** The `dataSync` foreground service
   holds the link with the screen off and restarts after a reboot, but it cannot survive the app
   being force-stopped, aggressive OEM task killers, or long Doze/standby periods that suspend
@@ -567,11 +639,13 @@ KNOT/
 - **Some providers cannot report a file size.** Those files are copied once into app storage
   before sending, which requires enough free space for a second copy. Others expose a persisted
   URI; if that grant is later revoked, the message reports the file as unavailable.
+- **The GIF gallery is local and manual.** Imports are capped at 50 MB each and are not synced,
+  searched or shared across devices; uninstalling Knot removes them.
 - **The protocol caps a file at 4 TiB**, a name at 255 UTF-8 bytes and a MIME type at 128 bytes.
 - **Notifications are only real events.** A high-importance alert appears only for a new
   incoming message or completed file while no Knot screen is visible.
-- **History and received files are local and not encrypted at rest.** Clearing app data or
-  uninstalling deletes them permanently. There is no backup, export or sync.
+- **History, received files and imported GIFs are local and not encrypted at rest.** Clearing
+  app data or uninstalling deletes them permanently. There is no backup, export or sync.
 - **The handshake is not externally audited.**
 - **Metadata is visible to the network.** DHT nodes, UDP trackers, STUN servers and the active
   peer see your public IP/port while the engine is running.
@@ -579,6 +653,16 @@ KNOT/
 The complete list is in [`LIMITATIONS.md`](LIMITATIONS.md).
 
 ## Roadmap
+
+**Shipped in 1.4.0**
+
+- A personal GIF gallery in the composer: import `.gif` files from the phone, keep them in
+  app-private storage and send any of them from any conversation.
+- Every GIF autoplays — gallery tiles and chat bubbles, outgoing and incoming — with no tap and
+  no play button.
+- Quoted replies no longer repeat the sender's name in the composer bar or inside the bubble.
+- The chat list distinguishes GIFs from generic files.
+- Platform-native animated GIF decoding on API 28+, with a Coil GIF fallback for Android 8.x.
 
 **Shipped in 1.3.0**
 
@@ -596,24 +680,17 @@ The complete list is in [`LIMITATIONS.md`](LIMITATIONS.md).
 - Invitation screens always block screenshots; copied invitation codes are marked sensitive
   and cleared from the clipboard after two minutes.
 
-**Shipped in 1.2.3**
+**Shipped in 1.2.x**
 
 - Always-on background delivery: the foreground service starts automatically whenever a
   contact is paired and restarts after a reboot or app update.
-- Every default-network change tears down the stale socket and revalidates immediately, even
-  while the UI said `Connected`.
-- Returning to the app after more than five seconds triggers a fresh handshake, and a dead link
-  is detected after 15 seconds instead of 30.
-- Battery-settings shortcut and updated notification wording; the old opt-in background switch
-  is gone.
-
-**Shipped in 1.2.2**
-
+- Every default-network change tears down the stale socket and revalidates immediately.
+- Returning to the app after more than five seconds triggers a fresh handshake; a dead link is
+  detected after 15 seconds.
 - One automatic connection policy: LAN beacon, UDP tracker/STUN, DHT and the saved last
   endpoint always run in parallel, with no manual method selector.
-- The saved peer endpoint is retried every few seconds while the link is down, so a
-  simultaneous restart on both devices reconnects without waiting for fresh discovery.
-- Connected status names the discovery route that actually carried the link.
+- The saved peer endpoint is retried every few seconds while the link is down.
+- Battery-settings shortcut and updated notification wording.
 
 **Shipped in 1.1.0**
 
@@ -665,18 +742,36 @@ a different contact moves the connection target to that conversation.
 </details>
 
 <details>
+<summary><strong>Where do my GIFs come from?</strong></summary>
+
+You add them. Tap **GIF** in the composer, then **Add GIF**, and pick `.gif` files from your
+phone. Knot copies them into its private storage and shows them as animated tiles. There is no
+online sticker catalogue and no upload.
+
+</details>
+
+<details>
+<summary><strong>Do GIFs animate automatically?</strong></summary>
+
+Yes, everywhere. Gallery tiles, outgoing GIFs and incoming GIFs all autoplay with no tap and no
+play button.
+
+</details>
+
+<details>
 <summary><strong>Does it work when the other person is offline?</strong></summary>
 
-No. There is no store-and-forward server. The message stays queued on the sender and is
+No. There is no store-and-forward server. The message or GIF stays queued on the sender and is
 delivered after the peer reconnects.
 
 </details>
 
 <details>
-<summary><strong>Are messages and files encrypted?</strong></summary>
+<summary><strong>Are messages, files and GIFs encrypted?</strong></summary>
 
 Yes, in transit: X25519 key agreement, HKDF-SHA256 key derivation and AES-256-GCM frames carry
-both text and file blocks. Local history and received files are not encrypted at rest.
+text, file blocks and GIF bytes. Local history, received files and imported GIFs are not
+encrypted at rest.
 
 </details>
 
@@ -685,7 +780,7 @@ both text and file blocks. Local history and received files are not encrypted at
 
 Yes. Files stream in 16 KiB blocks with flow control and resume after reconnection. The
 protocol cap is 4 TiB; both devices must be online at the same time because there is no upload
-server.
+server. The GIF gallery has its own 50 MB per-file import cap.
 
 </details>
 

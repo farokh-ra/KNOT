@@ -266,6 +266,7 @@
     <!-- Preview formatting -->
     <string name="home_preview_you">شما: %1$s</string>
     <string name="home_file_preview">فایل · %1$s</string>
+    <string name="home_gif_preview">GIF · %1$s</string>
     <string name="chat_preview_empty">هنوز پیامی نیست</string>
 
     <!-- Chat reply -->
@@ -273,9 +274,18 @@
     <string name="chat_cancel_reply">لغو پاسخ</string>
     <string name="chat_action_reply">پاسخ</string>
     <string name="chat_action_go_to_quoted">رفتن به پیام نقل‌شده</string>
-    <string name="chat_reply_you">شما</string>
-    <string name="chat_reply_peer">مخاطب</string>
-    <string name="chat_reply_unknown">پاسخ</string>
+
+    <!-- GIF gallery -->
+    <string name="chat_gif">GIF</string>
+    <string name="chat_gif_gallery">گالری GIF</string>
+    <string name="chat_gif_hint">GIFهای شما فقط روی همین دستگاه می‌مانند.</string>
+    <string name="chat_gif_add">افزودن GIF</string>
+    <string name="chat_gif_empty">هنوز GIF ندارید. فایل‌های .gif خود را اضافه کنید و هر زمان خواستید بفرستید.</string>
+    <string name="chat_gif_added">GIF به گالری شما اضافه شد</string>
+    <string name="chat_gif_invalid">این فایل GIF معتبری نیست.</string>
+    <string name="chat_gif_too_large">این GIF از ۵۰ مگابایت بزرگ‌تر است.</string>
+    <string name="chat_gif_import_failed">افزودن این GIF ممکن نشد.</string>
+    <string name="chat_gif_queued">GIF در صف ارسال قرار گرفت</string>
 
     <!-- New conversation sheet -->
     <string name="new_conversation_title">گفتگوی جدید</string>

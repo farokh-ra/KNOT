@@ -42,6 +42,7 @@ class ChatsAdapter(
                 summary.lastMessage,
                 context.getString(R.string.home_preview_you),
                 context.getString(R.string.home_file_preview),
+                context.getString(R.string.home_gif_preview),
                 context.getString(R.string.chat_preview_empty)
             )
             val timestamp = summary.sortTime
